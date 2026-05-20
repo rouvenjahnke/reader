@@ -1,0 +1,66 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { FixedSizeList, type ListChildComponentProps } from 'react-window';
+
+import { ArticleListItem } from '@/components/ArticleListItem';
+import { FilterBar } from '@/components/FilterBar';
+import { flushPendingQueues } from '@/lib/cache';
+import { filterAndSortArticles } from '@/lib/filters';
+import { fetchArticleSummaries } from '@/lib/sync';
+import { useArticleStore } from '@/stores/useArticleStore';
+import type { ArticleSummary } from '@/types/article';
+
+export default function HomePage(): React.ReactElement {
+  const articles = useArticleStore((state) => state.articles);
+  const filters = useArticleStore((state) => state.filters);
+  const setArticles = useArticleStore((state) => state.setArticles);
+  const [syncing, setSyncing] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [height, setHeight] = useState(720);
+  const filtered = useMemo(() => filterAndSortArticles(articles, filters), [articles, filters]);
+
+  const refresh = async () => {
+    setSyncing(true);
+    const result = await fetchArticleSummaries();
+    setArticles(result.articles);
+    setMessage(result.offline ? `Sync fehlgeschlagen, Cache geladen. ${new Date().toLocaleTimeString('de-DE')}` : `Synchronisiert um ${new Date().toLocaleTimeString('de-DE')}`);
+    setSyncing(false);
+  };
+
+  useEffect(() => {
+    void refresh();
+    void flushPendingQueues();
+    const interval = window.setInterval(refresh, 30 * 60 * 1000);
+    const onOnline = () => void flushPendingQueues();
+    const onResize = () => setHeight(Math.max(420, window.innerHeight - 172));
+    onResize();
+    window.addEventListener('online', onOnline);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('resize', onResize);
+    };
+  }, []);
+
+  return (
+    <main className="min-h-screen">
+      <FilterBar articles={articles} onRefresh={refresh} syncing={syncing} />
+      <section className="mx-auto max-w-[720px] py-3">
+        {message ? <p className="px-4 pb-2 text-sm text-neutral-500">{message}</p> : null}
+        {filtered.length === 0 ? (
+          <div className="px-4 py-24 text-center text-neutral-500">Keine Artikel. Pipeline läuft täglich um 07:00.</div>
+        ) : (
+          <FixedSizeList height={height} width="100%" itemCount={filtered.length} itemSize={176} itemData={filtered}>
+            {Row}
+          </FixedSizeList>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function Row({ index, style, data }: ListChildComponentProps<ArticleSummary[]>): React.ReactElement {
+  return <ArticleListItem article={data[index]} style={style} />;
+}

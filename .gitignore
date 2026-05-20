@@ -1,0 +1,12 @@
+node_modules
+.next
+out
+coverage
+playwright-report
+test-results
+.env
+.DS_Store
+npm-debug.log*
+public/sw.js
+public/workbox-*.js
+tsconfig.tsbuildinfo

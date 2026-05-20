@@ -1,0 +1,12 @@
+node_modules
+.next
+coverage
+playwright-report
+test-results
+.env
+.git
+.gitignore
+README.md
+npm-debug.log*
+public/sw.js
+public/workbox-*.js

@@ -58,5 +58,7 @@ export interface PendingHighlight {
   articleId: string;
   path: string;
   text: string;
+  action?: 'add' | 'remove';
+  occurrenceIndex?: number;
   createdAt: string;
 }

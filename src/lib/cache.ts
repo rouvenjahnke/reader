@@ -135,7 +135,11 @@ export async function flushPendingQueues(): Promise<void> {
       const response = await fetch(`/api/articles/${articleId}/highlight`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: highlight.text })
+        body: JSON.stringify({
+          text: highlight.text,
+          action: highlight.action ?? 'add',
+          occurrenceIndex: highlight.occurrenceIndex ?? 0
+        })
       });
       if (response.ok) {
         await db.delete('pending_highlights', highlight.id);

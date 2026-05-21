@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, Highlighter } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Eraser, ExternalLink, Highlighter } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { flushPendingQueues } from '@/lib/cache';
 import { filterAndSortArticles, nextUnratedAfter, priorityValue } from '@/lib/filters';
-import { highlightFirstOccurrence } from '@/lib/frontmatter';
+import { highlightFirstOccurrence, removeHighlightInBody } from '@/lib/frontmatter';
 import { queueHighlight, queueRating, saveArticle, updateCachedBody, updateCachedRating } from '@/lib/cache';
 import { appendSyncLog } from '@/lib/syncLog';
 import { useArticleStore } from '@/stores/useArticleStore';
@@ -24,11 +24,12 @@ interface Props {
 export function ArticleReader({ article: initialArticle }: Props): React.ReactElement {
   const router = useRouter();
   const [article, setArticle] = useState(initialArticle);
-  const [selectedText, setSelectedText] = useState('');
+  const [selection, setSelectionState] = useState<{ text: string; occurrenceIndex: number; overlapsHighlight: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null);
   const scrollSaveRef = useRef<{ timer: number | null; pendingY: number }>({ timer: null, pendingY: 0 });
   const syncTimerRef = useRef<number | null>(null);
+  const proseRef = useRef<HTMLDivElement | null>(null);
   const articles = useArticleStore((state) => state.articles);
   const filters = useArticleStore((state) => state.filters);
   const updateSummary = useArticleStore((state) => state.updateSummary);
@@ -59,15 +60,28 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   }, []);
 
   const captureSelection = useCallback(() => {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) {
-      setSelectedText('');
+    const sel = window.getSelection();
+    const proseRoot = proseRef.current;
+    if (!sel || sel.rangeCount === 0 || !proseRoot) {
+      setSelectionState(null);
       return;
     }
-    const text = selection.toString().trim();
-    const markdownSource = selectedMarkdownSource(selection);
-    const highlightText = markdownSource || text;
-    setSelectedText(highlightText.length > 1 ? highlightText : '');
+    const range = sel.getRangeAt(0);
+    if (range.collapsed || !proseRoot.contains(range.commonAncestorContainer)) {
+      setSelectionState(null);
+      return;
+    }
+
+    const markdownText = buildSelectionMarkdownSource(range);
+    if (markdownText.trim().length <= 1) {
+      setSelectionState(null);
+      return;
+    }
+
+    const occurrenceIndex = countOccurrencesInPrefix(proseRoot, range, markdownText);
+    const overlapsHighlight = rangeOverlapsHighlight(range);
+
+    setSelectionState({ text: markdownText, occurrenceIndex, overlapsHighlight });
   }, []);
 
   const handleRate = useCallback(
@@ -106,58 +120,74 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     [article, busy, ordered, router, updateSummary]
   );
 
-  const handleHighlight = useCallback(async () => {
-    const text = selectedText.trim();
-    if (!text || busy) return;
-    window.getSelection()?.removeAllRanges();
-    setSelectedText('');
+  const runHighlightAction = useCallback(
+    async (action: 'add' | 'remove') => {
+      if (!selection || busy) return;
+      const { text, occurrenceIndex } = selection;
+      window.getSelection()?.removeAllRanges();
+      setSelectionState(null);
 
-    let optimisticBody: string;
-    try {
-      optimisticBody = highlightFirstOccurrence(article.body, text);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown error';
-      appendSyncLog('error', `Highlight not found in markdown: ${article.path} (${message})`);
-      setFeedback({ tone: 'error', message: 'Selection could not be located in the markdown.' });
-      return;
-    }
-
-    setArticle((current) => ({ ...current, body: optimisticBody }));
-    await updateCachedBody(article.id, optimisticBody);
-
-    if (navigator.onLine) {
+      let optimisticBody: string;
       try {
-        const response = await fetch(`/api/articles/${article.id}/highlight`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ text })
-        });
-        if (!response.ok) throw new Error(await response.text());
-        const saved = (await response.json()) as Article;
-        setArticle(saved);
-        await saveArticle(saved);
-        appendSyncLog('info', `Highlight saved: ${article.path}`);
-        setFeedback({ tone: 'success', message: 'Highlight saved to Nextcloud.' });
-        return;
+        optimisticBody =
+          action === 'add'
+            ? highlightFirstOccurrence(article.body, text, { occurrenceIndex })
+            : removeHighlightInBody(article.body, text, { occurrenceIndex });
       } catch (error) {
-        appendSyncLog('error', `Highlight upload failed, queued instead: ${article.path}`);
+        const message = error instanceof Error ? error.message : 'unknown error';
+        appendSyncLog('error', `Highlight ${action} failed locally: ${article.path} (${message})`);
+        setFeedback({ tone: 'error', message: 'Selection could not be located in the markdown.' });
+        return;
       }
-    }
 
-    await queueHighlight({
-      id: `${article.id}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
-      articleId: article.id,
-      path: article.path,
-      text,
-      createdAt: new Date().toISOString()
-    });
-    setFeedback({ tone: 'info', message: 'Highlight queued — will sync when online.' });
-    scheduleDeferredSync();
-  }, [article, busy, scheduleDeferredSync, selectedText]);
+      if (optimisticBody === article.body) {
+        setFeedback({ tone: 'info', message: action === 'remove' ? 'No highlight to remove here.' : 'Already highlighted.' });
+        return;
+      }
+
+      setArticle((current) => ({ ...current, body: optimisticBody }));
+      await updateCachedBody(article.id, optimisticBody);
+
+      if (navigator.onLine) {
+        try {
+          const response = await fetch(`/api/articles/${article.id}/highlight`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ text, action, occurrenceIndex })
+          });
+          if (!response.ok) throw new Error(await response.text());
+          const saved = (await response.json()) as Article;
+          setArticle(saved);
+          await saveArticle(saved);
+          appendSyncLog('info', `Highlight ${action} saved: ${article.path}`);
+          setFeedback({ tone: 'success', message: action === 'remove' ? 'Highlight removed and saved.' : 'Highlight saved to Nextcloud.' });
+          return;
+        } catch (error) {
+          appendSyncLog('error', `Highlight ${action} upload failed, queued instead: ${article.path}`);
+        }
+      }
+
+      await queueHighlight({
+        id: `${article.id}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+        articleId: article.id,
+        path: article.path,
+        text,
+        action,
+        occurrenceIndex,
+        createdAt: new Date().toISOString()
+      });
+      setFeedback({ tone: 'info', message: 'Change queued — will sync when online.' });
+      scheduleDeferredSync();
+    },
+    [article, busy, scheduleDeferredSync, selection]
+  );
+
+  const handleHighlight = useCallback(() => runHighlightAction('add'), [runHighlightAction]);
+  const handleUnhighlight = useCallback(() => runHighlightAction('remove'), [runHighlightAction]);
 
   useEffect(() => {
     setArticle(initialArticle);
-    setSelectedText('');
+    setSelectionState(null);
     setLastArticleId(initialArticle.id);
     const savedScrollY = useArticleStore.getState().articleScrollPositions[initialArticle.id] ?? 0;
     const restore = window.setTimeout(() => {
@@ -262,14 +292,19 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
         </div>
       </header>
 
-      {selectedText ? (
+      {selection ? (
         <div
-          className="fixed left-1/2 top-24 z-40 -translate-x-1/2 rounded-md border border-yellow-400 bg-yellow-50 p-2 text-neutral-950 shadow-lg dark:border-yellow-500 dark:bg-yellow-100"
+          className="fixed left-1/2 top-24 z-40 flex -translate-x-1/2 gap-2 rounded-md border border-yellow-400 bg-yellow-50 p-2 text-neutral-950 shadow-lg dark:border-yellow-500 dark:bg-yellow-100"
           data-no-swipe
         >
           <Button type="button" variant="highlight" size="sm" onClick={handleHighlight} disabled={busy}>
             <Highlighter className="h-4 w-4" /> Highlight
           </Button>
+          {selection.overlapsHighlight ? (
+            <Button type="button" variant="secondary" size="sm" onClick={handleUnhighlight} disabled={busy}>
+              <Eraser className="h-4 w-4" /> Remove
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -291,7 +326,9 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
 
       <main className="mx-auto max-w-[760px] px-4 py-6" onMouseUp={captureSelection} onTouchEnd={() => window.setTimeout(captureSelection, 80)}>
         <SwipeContainer onNext={() => goTo(next?.id)} onPrev={() => goTo(previous?.id)}>
-          <MarkdownRenderer content={article.body} />
+          <div ref={proseRef}>
+            <MarkdownRenderer content={article.body} />
+          </div>
           {article.frontmatter.url ? (
             <div className="mt-12 border-t border-neutral-300 pt-6 dark:border-neutral-800" data-no-swipe>
               <a
@@ -314,39 +351,168 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   );
 }
 
-function selectedMarkdownSource(selection: Selection): string {
-  if (selection.rangeCount === 0) return '';
-  const range = selection.getRangeAt(0);
-  const start = closestElement(range.startContainer);
-  const end = closestElement(range.endContainer);
+/**
+ * Walk the selection range, substituting KaTeX math elements with their `$source$`
+ * representation so mixed text+math selections can be located in the markdown body.
+ *
+ * For plain text we use the literal rendered text. The walker enters element subtrees
+ * unless they're math, in which case it emits the source and skips the subtree.
+ */
+function buildSelectionMarkdownSource(range: Range): string {
+  const root = range.commonAncestorContainer;
+  const startNode = range.startContainer;
+  const endNode = range.endContainer;
+  const startOffset = range.startOffset;
+  const endOffset = range.endOffset;
 
-  const startAncestor = ancestorWithSource(start);
-  const endAncestor = ancestorWithSource(end);
+  let result = '';
+  let started = false;
+  let finished = false;
 
-  if (startAncestor && startAncestor === endAncestor) {
-    return startAncestor.getAttribute('data-md-source') ?? '';
-  }
+  const visit = (node: Node) => {
+    if (finished) return;
 
-  const startKatex = katexMarkdownSource(start);
-  const endKatex = katexMarkdownSource(end);
-  if (startKatex && startKatex === endKatex) return startKatex;
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const element = node as Element;
 
-  return '';
+      // If the range begins or ends inside this element, recurse into children.
+      // But for math elements that are FULLY inside the range, take the source.
+      const intersects = rangeIntersectsNode(range, element);
+      if (!intersects) return;
+
+      if (element.matches('.katex, .katex-display') || element.classList.contains('katex')) {
+        // Emit math source only when entire element is contained in the range.
+        const startsBefore = nodeContainsBefore(element, range.startContainer, range.startOffset);
+        const endsAfter = nodeContainsAfter(element, range.endContainer, range.endOffset);
+        if (startsBefore && endsAfter) {
+          const source = mathSourceFor(element);
+          if (started) result += source;
+          else if (source) {
+            result += source;
+            started = true;
+          }
+          return;
+        }
+      }
+
+      for (const child of Array.from(element.childNodes)) {
+        if (finished) break;
+        visit(child);
+      }
+      return;
+    }
+
+    if (node.nodeType !== Node.TEXT_NODE) return;
+    // Skip text nodes inside katex (handled by the element branch).
+    const parentEl = (node as Text).parentElement;
+    if (parentEl?.closest('.katex, .katex-display')) return;
+
+    const text = (node as Text).data;
+    let from = 0;
+    let to = text.length;
+    if (node === startNode) {
+      from = startOffset;
+      started = true;
+    } else if (!started) {
+      // Haven't reached selection start yet.
+      return;
+    }
+    if (node === endNode) {
+      to = endOffset;
+      finished = true;
+    }
+    if (to > from) result += text.slice(from, to);
+  };
+
+  visit(root);
+  return result;
 }
 
-function ancestorWithSource(element: Element | null): Element | null {
-  return element?.closest('[data-md-source]') ?? null;
-}
-
-function closestElement(node: Node): Element | null {
-  return node instanceof Element ? node : node.parentElement;
-}
-
-function katexMarkdownSource(element: Element | null): string {
-  const katex = element?.closest('.katex, .katex-display');
-  if (!katex) return '';
-  const annotation = katex.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim();
+function mathSourceFor(element: Element): string {
+  const direct = element.getAttribute('data-md-source');
+  if (direct) return direct;
+  const annotation = element.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim();
   if (!annotation) return '';
-  const display = Boolean(katex.closest('.katex-display'));
+  const display = Boolean(element.closest('.katex-display'));
   return display ? `$$${annotation}$$` : `$${annotation}$`;
+}
+
+function rangeIntersectsNode(range: Range, node: Node): boolean {
+  const nodeRange = node.ownerDocument?.createRange();
+  if (!nodeRange) return false;
+  try {
+    nodeRange.selectNode(node);
+  } catch {
+    return false;
+  }
+  const afterStart = range.compareBoundaryPoints(Range.END_TO_START, nodeRange) <= 0;
+  const beforeEnd = range.compareBoundaryPoints(Range.START_TO_END, nodeRange) >= 0;
+  return afterStart && beforeEnd;
+}
+
+function nodeContainsBefore(element: Element, container: Node, offset: number): boolean {
+  // True when the range's start point is at or before the element's start.
+  const ref = element.ownerDocument!.createRange();
+  ref.selectNode(element);
+  const probe = element.ownerDocument!.createRange();
+  probe.setStart(container, offset);
+  probe.setEnd(container, offset);
+  return probe.compareBoundaryPoints(Range.START_TO_START, ref) <= 0;
+}
+
+function nodeContainsAfter(element: Element, container: Node, offset: number): boolean {
+  const ref = element.ownerDocument!.createRange();
+  ref.selectNode(element);
+  const probe = element.ownerDocument!.createRange();
+  probe.setStart(container, offset);
+  probe.setEnd(container, offset);
+  return probe.compareBoundaryPoints(Range.END_TO_END, ref) >= 0;
+}
+
+/**
+ * Count how many times `needle` appears in the rendered text BEFORE the selection start.
+ * This lets us pick the matching occurrence in the source body when the same text
+ * appears multiple times (e.g., the word "of").
+ */
+function countOccurrencesInPrefix(root: HTMLElement, range: Range, needle: string): number {
+  if (!root.contains(range.startContainer)) return 0;
+  const prefix = root.ownerDocument!.createRange();
+  prefix.selectNodeContents(root);
+  prefix.setEnd(range.startContainer, range.startOffset);
+  const prefixText = prefix.toString();
+
+  // Try both the literal needle and a whitespace-collapsed form for robustness.
+  const candidates = [needle, needle.replace(/\s+/g, ' ').trim()];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const haystack = prefixText.includes(candidate) ? prefixText : prefixText.replace(/\s+/g, ' ');
+    let count = 0;
+    let idx = 0;
+    while (true) {
+      const found = haystack.indexOf(candidate, idx);
+      if (found < 0) break;
+      count += 1;
+      idx = found + Math.max(1, candidate.length);
+    }
+    if (count > 0 || candidate === needle) return count;
+  }
+  return 0;
+}
+
+/**
+ * True when the selection range starts or ends inside a `<mark>` element or contains one.
+ */
+function rangeOverlapsHighlight(range: Range): boolean {
+  const selector = 'mark, .reader-math-highlight';
+  const startEl = range.startContainer.nodeType === Node.ELEMENT_NODE ? (range.startContainer as Element) : range.startContainer.parentElement;
+  const endEl = range.endContainer.nodeType === Node.ELEMENT_NODE ? (range.endContainer as Element) : range.endContainer.parentElement;
+  if (startEl?.closest(selector)) return true;
+  if (endEl?.closest(selector)) return true;
+
+  const common = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE ? (range.commonAncestorContainer as Element) : range.commonAncestorContainer.parentElement;
+  const candidates = common?.querySelectorAll(selector) ?? [];
+  for (const candidate of candidates) {
+    if (rangeIntersectsNode(range, candidate)) return true;
+  }
+  return false;
 }

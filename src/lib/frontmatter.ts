@@ -28,52 +28,217 @@ export function setRating(raw: string, status: Exclude<ReaderStatus, 'unrated'>,
   return matter.stringify(parsed.content, parsed.data);
 }
 
-export function addHighlight(raw: string, selectedText: string): string {
+export interface HighlightOptions {
+  /** Number of previous occurrences of the selected text seen in the rendered prefix before the selection start. */
+  occurrenceIndex?: number;
+}
+
+export function addHighlight(raw: string, selectedText: string, options: HighlightOptions = {}): string {
   const text = selectedText.trim();
   if (!text) {
-    throw new Error('Kein Text markiert.');
+    throw new Error('Selection is empty.');
   }
 
   const parsed = matter(raw);
-  const body = parsed.content;
-  const highlighted = highlightFirstOccurrence(body, text);
+  const highlighted = highlightFirstOccurrence(parsed.content, text, options);
   return matter.stringify(highlighted, parsed.data);
 }
 
-export function highlightFirstOccurrence(body: string, selectedText: string): string {
+export function removeHighlight(raw: string, selectedText: string, options: HighlightOptions = {}): string {
+  const text = selectedText.trim();
+  if (!text) {
+    throw new Error('Selection is empty.');
+  }
+
+  const parsed = matter(raw);
+  const updated = removeHighlightInBody(parsed.content, text, options);
+  return matter.stringify(updated, parsed.data);
+}
+
+export function highlightFirstOccurrence(body: string, selectedText: string, options: HighlightOptions = {}): string {
   const needle = selectedText.trim();
-  if (!needle) {
+  if (!needle) return body;
+
+  const mathRange = findMathMatch(body, needle);
+  if (mathRange) {
+    return applyHighlight(body, mathRange.start, mathRange.end);
+  }
+
+  const range = locateRange(body, needle, options.occurrenceIndex ?? 0);
+  if (!range) {
+    throw new Error('Selection could not be located in the markdown.');
+  }
+  return applyHighlight(body, range.start, range.end);
+}
+
+export function removeHighlightInBody(body: string, selectedText: string, options: HighlightOptions = {}): string {
+  const needle = selectedText.trim();
+  if (!needle) return body;
+
+  // First try math: locate the math range, then strip surrounding == if present.
+  const mathRange = findMathMatch(body, needle);
+  if (mathRange) {
+    return stripMarkersAround(body, mathRange.start, mathRange.end);
+  }
+
+  const range = locateRange(body, needle, options.occurrenceIndex ?? 0);
+  if (!range) {
+    // Nothing to remove for this selection.
     return body;
   }
 
-  const exactIndex = body.indexOf(needle);
-  if (exactIndex >= 0 && !isAlreadyHighlighted(body, exactIndex, needle.length)) {
-    return `${body.slice(0, exactIndex)}==${needle}==${body.slice(exactIndex + needle.length)}`;
+  return stripMarkersAround(body, range.start, range.end);
+}
+
+function applyHighlight(body: string, start: number, end: number): string {
+  let s = start;
+  let e = end;
+
+  // If selection is immediately preceded/followed by existing markers, merge with them.
+  if (body.slice(Math.max(0, s - 2), s) === '==') {
+    s -= 2;
+  }
+  if (body.slice(e, e + 2) === '==') {
+    e += 2;
   }
 
-  const mathMatch = findMathMatch(body, needle);
-  if (mathMatch && !isAlreadyHighlighted(body, mathMatch.start, mathMatch.end - mathMatch.start)) {
-    return `${body.slice(0, mathMatch.start)}==${body.slice(mathMatch.start, mathMatch.end)}==${body.slice(mathMatch.end)}`;
+  const inner = body.slice(s, e).replace(/==/g, '');
+  if (!inner.trim()) return body;
+  return `${body.slice(0, s)}==${inner}==${body.slice(e)}`;
+}
+
+function stripMarkersAround(body: string, start: number, end: number): string {
+  let s = start;
+  let e = end;
+
+  // Expand to include any enclosing == markers immediately around the range.
+  if (body.slice(Math.max(0, s - 2), s) === '==') {
+    s -= 2;
+  }
+  if (body.slice(e, e + 2) === '==') {
+    e += 2;
   }
 
-  const normalizedNeedle = normalizeWhitespace(needle);
-  const match = findNormalizedMatch(body, normalizedNeedle);
-  if (!match || isAlreadyHighlighted(body, match.start, match.end - match.start)) {
-    throw new Error('Der markierte Text wurde im Markdown nicht eindeutig gefunden.');
+  // Find the surrounding `==...==` block by scanning outward if the immediate slice doesn't already include them.
+  const widened = widenToEnclosingHighlight(body, s, e);
+  if (widened) {
+    s = widened.start;
+    e = widened.end;
   }
 
-  return `${body.slice(0, match.start)}==${body.slice(match.start, match.end)}==${body.slice(match.end)}`;
+  const inner = body.slice(s, e).replace(/==/g, '');
+  return `${body.slice(0, s)}${inner}${body.slice(e)}`;
+}
+
+function widenToEnclosingHighlight(body: string, start: number, end: number): { start: number; end: number } | null {
+  // If [start,end) is inside a single ==...== block, expand to that block boundaries.
+  const before = body.lastIndexOf('==', start);
+  if (before < 0) return null;
+  const after = body.indexOf('==', end);
+  if (after < 0) return null;
+
+  // Ensure there is no `==` between the inner region and the outer markers.
+  const between1 = body.slice(before + 2, start);
+  const between2 = body.slice(end, after);
+  if (between1.includes('==') || between2.includes('==')) return null;
+
+  return { start: before, end: after + 2 };
+}
+
+interface StrippedBody {
+  text: string;
+  map: number[];
+}
+
+function stripHighlightMarkers(body: string): StrippedBody {
+  let text = '';
+  const map: number[] = [];
+  let i = 0;
+  while (i < body.length) {
+    if (body[i] === '=' && body[i + 1] === '=') {
+      i += 2;
+      continue;
+    }
+    map.push(i);
+    text += body[i];
+    i += 1;
+  }
+  map.push(body.length);
+  return { text, map };
+}
+
+function locateRange(body: string, needle: string, occurrenceIndex: number): { start: number; end: number } | null {
+  const stripped = stripHighlightMarkers(body);
+
+  // Exact match (case-sensitive) – occurrence-aware
+  let from = 0;
+  let skipped = 0;
+  while (true) {
+    const idx = stripped.text.indexOf(needle, from);
+    if (idx < 0) break;
+    if (skipped >= occurrenceIndex) {
+      return { start: stripped.map[idx], end: stripped.map[idx + needle.length] };
+    }
+    skipped += 1;
+    from = idx + Math.max(1, needle.length);
+  }
+
+  // Whitespace-tolerant match: collapse whitespace in both sides and remap indices.
+  const collapsed = collapseWhitespace(stripped.text);
+  const collapsedNeedle = needle.replace(/\s+/g, ' ').trim();
+  let cFrom = 0;
+  let cSkipped = 0;
+  while (true) {
+    const cIdx = collapsed.text.indexOf(collapsedNeedle, cFrom);
+    if (cIdx < 0) break;
+    if (cSkipped >= occurrenceIndex) {
+      const startStripped = collapsed.map[cIdx];
+      const endStripped = collapsed.map[cIdx + collapsedNeedle.length];
+      return { start: stripped.map[startStripped], end: stripped.map[endStripped] };
+    }
+    cSkipped += 1;
+    cFrom = cIdx + Math.max(1, collapsedNeedle.length);
+  }
+
+  return null;
+}
+
+function collapseWhitespace(text: string): { text: string; map: number[] } {
+  let out = '';
+  const map: number[] = [];
+  let i = 0;
+  let lastWasSpace = false;
+  while (i < text.length) {
+    const ch = text[i];
+    if (/\s/.test(ch)) {
+      if (!lastWasSpace) {
+        out += ' ';
+        map.push(i);
+        lastWasSpace = true;
+      }
+      i += 1;
+    } else {
+      out += ch;
+      map.push(i);
+      lastWasSpace = false;
+      i += 1;
+    }
+  }
+  map.push(text.length);
+  return { text: out, map };
 }
 
 function findMathMatch(body: string, selectedText: string): { start: number; end: number } | null {
   const math = parseSelectedMath(selectedText);
   if (!math) return null;
 
-  const candidates = math.display ? findDisplayMathRanges(body) : [...findInlineMathRanges(body), ...findDisplayMathRanges(body)];
+  const candidates = math.display
+    ? findDisplayMathRanges(body)
+    : [...findInlineMathRanges(body), ...findDisplayMathRanges(body)];
   const normalizedNeedle = normalizeMath(math.content);
   const matches = candidates.filter((candidate) => normalizeMath(candidate.content) === normalizedNeedle);
 
-  return matches.length === 1 ? { start: matches[0].start, end: matches[0].end } : null;
+  return matches.length >= 1 ? { start: matches[0].start, end: matches[0].end } : null;
 }
 
 function parseSelectedMath(value: string): { content: string; display: boolean } | null {
@@ -119,45 +284,8 @@ function findInlineMathRanges(body: string): Array<{ start: number; end: number;
   return ranges;
 }
 
-function findNormalizedMatch(body: string, normalizedNeedle: string): { start: number; end: number } | null {
-  for (let start = 0; start < body.length; start += 1) {
-    if (body[start]?.trim() === '') continue;
-    let bodyIndex = start;
-    let needleIndex = 0;
-
-    while (bodyIndex < body.length && needleIndex < normalizedNeedle.length) {
-      const bodyChar = body[bodyIndex];
-      const needleChar = normalizedNeedle[needleIndex];
-
-      if (/\s/.test(bodyChar) && needleChar === ' ') {
-        while (bodyIndex < body.length && /\s/.test(body[bodyIndex])) bodyIndex += 1;
-        needleIndex += 1;
-        continue;
-      }
-
-      if (bodyChar !== needleChar) break;
-      bodyIndex += 1;
-      needleIndex += 1;
-    }
-
-    if (needleIndex === normalizedNeedle.length) {
-      return { start, end: bodyIndex };
-    }
-  }
-
-  return null;
-}
-
-function normalizeWhitespace(value: string): string {
-  return value.replace(/\s+/g, ' ').trim();
-}
-
 function normalizeMath(value: string): string {
   return value.replace(/\s+/g, '');
-}
-
-function isAlreadyHighlighted(body: string, start: number, length: number): boolean {
-  return body.slice(Math.max(0, start - 2), start) === '==' && body.slice(start + length, start + length + 2) === '==';
 }
 
 function normalizeTags(value: unknown): string[] {

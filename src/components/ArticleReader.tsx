@@ -23,6 +23,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const router = useRouter();
   const [article, setArticle] = useState(initialArticle);
   const [selectedText, setSelectedText] = useState('');
+  const [highlightMessage, setHighlightMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const scrollSaveRef = useRef({ frame: 0, lastSavedAt: 0 });
   const articles = useArticleStore((state) => state.articles);
@@ -51,6 +52,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     const markdownSource = selection ? selectedMarkdownSource(selection) : '';
     const highlightText = markdownSource || text;
     setSelectedText(highlightText.length > 1 ? highlightText : '');
+    if (highlightText.length > 1) setHighlightMessage(null);
   }, []);
 
   const handleRate = useCallback(
@@ -93,11 +95,18 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     const text = selectedText.trim();
     if (!text || busy) return;
     setBusy(true);
+    let optimisticApplied = false;
+
     try {
       const optimisticBody = highlightFirstOccurrence(article.body, text);
       setArticle((current) => ({ ...current, body: optimisticBody }));
       await updateCachedBody(article.id, optimisticBody);
+      optimisticApplied = true;
+    } catch {
+      optimisticApplied = false;
+    }
 
+    try {
       if (!navigator.onLine) throw new Error('offline');
       const response = await fetch(`/api/articles/${article.id}/highlight`, {
         method: 'POST',
@@ -108,11 +117,14 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
       const saved = (await response.json()) as Article;
       setArticle(saved);
       await saveArticle(saved);
+      setHighlightMessage('Markierung in Nextcloud gespeichert.');
     } catch {
       if (navigator.onLine) {
-        setArticle(article);
+        if (optimisticApplied) setArticle(article);
+        setHighlightMessage('Markierung konnte nicht in Nextcloud gespeichert werden.');
       } else {
         await queueHighlight({ id: article.id, path: article.path, text, createdAt: new Date().toISOString() });
+        setHighlightMessage('Offline gespeichert, Sync folgt beim nächsten Online-Status.');
       }
     } finally {
       window.getSelection()?.removeAllRanges();
@@ -124,6 +136,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   useEffect(() => {
     setArticle(initialArticle);
     setSelectedText('');
+    setHighlightMessage(null);
     setLastArticleId(initialArticle.id);
     const restore = window.setTimeout(() => {
       const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
@@ -131,6 +144,12 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     }, 80);
     return () => window.clearTimeout(restore);
   }, [initialArticle, savedScrollY, setLastArticleId]);
+
+  useEffect(() => {
+    if (!highlightMessage) return;
+    const timeout = window.setTimeout(() => setHighlightMessage(null), 2500);
+    return () => window.clearTimeout(timeout);
+  }, [highlightMessage]);
 
   useEffect(() => {
     const save = (force = false) => {
@@ -215,6 +234,11 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
           <Button type="button" variant="highlight" size="sm" onClick={handleHighlight} disabled={busy}>
             <Highlighter className="h-4 w-4" /> Markieren
           </Button>
+        </div>
+      ) : null}
+      {highlightMessage ? (
+        <div className="fixed left-1/2 top-24 z-40 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-lg dark:border-neutral-800 dark:bg-neutral-950" data-no-swipe>
+          {highlightMessage}
         </div>
       ) : null}
 

@@ -42,4 +42,12 @@ This is selected text.
   it('matches selected text across whitespace differences', () => {
     expect(highlightFirstOccurrence('alpha   beta\ngamma', 'alpha beta gamma')).toBe('==alpha   beta\ngamma==');
   });
+
+  it('matches rendered display math back to markdown math source', () => {
+    expect(highlightFirstOccurrence('Before\n$$\n\\int_0^1 x dx\n$$\nAfter', '$$\\int_0^1 x dx$$')).toBe('Before\n==$$\n\\int_0^1 x dx\n$$==\nAfter');
+  });
+
+  it('matches rendered inline math back to markdown math source', () => {
+    expect(highlightFirstOccurrence('This is $ x^2 + 1 $ in text.', '$x^2+1$')).toBe('This is ==$ x^2 + 1 $== in text.');
+  });
 });

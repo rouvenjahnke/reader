@@ -51,6 +51,11 @@ export function highlightFirstOccurrence(body: string, selectedText: string): st
     return `${body.slice(0, exactIndex)}==${needle}==${body.slice(exactIndex + needle.length)}`;
   }
 
+  const mathMatch = findMathMatch(body, needle);
+  if (mathMatch && !isAlreadyHighlighted(body, mathMatch.start, mathMatch.end - mathMatch.start)) {
+    return `${body.slice(0, mathMatch.start)}==${body.slice(mathMatch.start, mathMatch.end)}==${body.slice(mathMatch.end)}`;
+  }
+
   const normalizedNeedle = normalizeWhitespace(needle);
   const match = findNormalizedMatch(body, normalizedNeedle);
   if (!match || isAlreadyHighlighted(body, match.start, match.end - match.start)) {
@@ -58,6 +63,60 @@ export function highlightFirstOccurrence(body: string, selectedText: string): st
   }
 
   return `${body.slice(0, match.start)}==${body.slice(match.start, match.end)}==${body.slice(match.end)}`;
+}
+
+function findMathMatch(body: string, selectedText: string): { start: number; end: number } | null {
+  const math = parseSelectedMath(selectedText);
+  if (!math) return null;
+
+  const candidates = math.display ? findDisplayMathRanges(body) : [...findInlineMathRanges(body), ...findDisplayMathRanges(body)];
+  const normalizedNeedle = normalizeMath(math.content);
+  const matches = candidates.filter((candidate) => normalizeMath(candidate.content) === normalizedNeedle);
+
+  return matches.length === 1 ? { start: matches[0].start, end: matches[0].end } : null;
+}
+
+function parseSelectedMath(value: string): { content: string; display: boolean } | null {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('$$') && trimmed.endsWith('$$') && trimmed.length > 4) {
+    return { content: trimmed.slice(2, -2), display: true };
+  }
+  if (trimmed.startsWith('$') && trimmed.endsWith('$') && trimmed.length > 2) {
+    return { content: trimmed.slice(1, -1), display: false };
+  }
+  return null;
+}
+
+function findDisplayMathRanges(body: string): Array<{ start: number; end: number; content: string }> {
+  const ranges: Array<{ start: number; end: number; content: string }> = [];
+  const pattern = /\$\$([\s\S]*?)\$\$/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(body)) !== null) {
+    ranges.push({ start: match.index, end: match.index + match[0].length, content: match[1] });
+  }
+  return ranges;
+}
+
+function findInlineMathRanges(body: string): Array<{ start: number; end: number; content: string }> {
+  const ranges: Array<{ start: number; end: number; content: string }> = [];
+
+  for (let index = 0; index < body.length; index += 1) {
+    if (body[index] !== '$' || body[index + 1] === '$' || body[index - 1] === '\\') continue;
+    const start = index;
+    index += 1;
+    let content = '';
+
+    while (index < body.length) {
+      if (body[index] === '$' && body[index - 1] !== '\\' && body[index + 1] !== '$') {
+        ranges.push({ start, end: index + 1, content });
+        break;
+      }
+      content += body[index];
+      index += 1;
+    }
+  }
+
+  return ranges;
 }
 
 function findNormalizedMatch(body: string, normalizedNeedle: string): { start: number; end: number } | null {
@@ -91,6 +150,10 @@ function findNormalizedMatch(body: string, normalizedNeedle: string): { start: n
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeMath(value: string): string {
+  return value.replace(/\s+/g, '');
 }
 
 function isAlreadyHighlighted(body: string, start: number, length: number): boolean {

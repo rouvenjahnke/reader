@@ -74,7 +74,11 @@ export async function getArticleRaw(path: string): Promise<string> {
 
 export async function putArticleRaw(path: string, content: string): Promise<void> {
   const c = getNextcloudClient();
-  await c.putFileContents(path, content, { overwrite: true });
+  const buffer = Buffer.from(content, 'utf8');
+  await c.putFileContents(path, buffer, {
+    overwrite: true,
+    contentLength: buffer.byteLength
+  });
 }
 
 export async function testConnection(basePath = getBasePath()): Promise<{ ok: true; count: number }> {

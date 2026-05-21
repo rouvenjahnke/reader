@@ -141,31 +141,12 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
       }
 
       if (optimisticBody === article.body) {
-        setFeedback({ tone: 'info', message: action === 'remove' ? 'No highlight to remove here.' : 'Already highlighted.' });
+        // No-op: nothing to highlight or remove. Stay silent.
         return;
       }
 
       setArticle((current) => ({ ...current, body: optimisticBody }));
       await updateCachedBody(article.id, optimisticBody);
-
-      if (navigator.onLine) {
-        try {
-          const response = await fetch(`/api/articles/${article.id}/highlight`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ text, action, occurrenceIndex })
-          });
-          if (!response.ok) throw new Error(await response.text());
-          const saved = (await response.json()) as Article;
-          setArticle(saved);
-          await saveArticle(saved);
-          appendSyncLog('info', `Highlight ${action} saved: ${article.path}`);
-          setFeedback({ tone: 'success', message: action === 'remove' ? 'Highlight removed and saved.' : 'Highlight saved to Nextcloud.' });
-          return;
-        } catch (error) {
-          appendSyncLog('error', `Highlight ${action} upload failed, queued instead: ${article.path}`);
-        }
-      }
 
       await queueHighlight({
         id: `${article.id}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
@@ -176,7 +157,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
         occurrenceIndex,
         createdAt: new Date().toISOString()
       });
-      setFeedback({ tone: 'info', message: 'Change queued — will sync when online.' });
+      appendSyncLog('info', `Highlight ${action} queued: ${article.path}`);
       scheduleDeferredSync();
     },
     [article, busy, scheduleDeferredSync, selection]
@@ -233,6 +214,14 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     document.addEventListener('selectionchange', captureSelection);
     return () => document.removeEventListener('selectionchange', captureSelection);
   }, [captureSelection]);
+
+  useEffect(() => {
+    const flush = () => {
+      if (document.visibilityState === 'hidden') void flushPendingQueues();
+    };
+    document.addEventListener('visibilitychange', flush);
+    return () => document.removeEventListener('visibilitychange', flush);
+  }, []);
 
   useEffect(() => {
     if (!feedback) return;

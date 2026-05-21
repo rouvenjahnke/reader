@@ -31,6 +31,7 @@ Alle WebDAV-Zugriffe laufen serverseitig über die Next.js API-Routes. Das Front
 - Artikel öffnen, horizontal wischen oder Pfeiltasten nutzen.
 - `1`, `2`, `3` bewerten als irrelevant, relevant, high relevant.
 - Text im Reader markieren und `Markieren` tippen. Die App schreibt den Treffer als Obsidian/Markdown-Highlight `==markierter Text==` zurück in die Markdown-Datei.
+- Optionales Frontmatter fuer bewusst vorgemerkte Artikel: `reader_priority: 200` oder `reader_pinned: true`. Diese Artikel stehen automatisch oben und koennen mit dem Filter `Priorisiert` isoliert werden.
 
 ## Produktion
 

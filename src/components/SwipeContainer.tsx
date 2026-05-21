@@ -28,6 +28,7 @@ export function SwipeContainer({ children, onNext, onPrev }: Props): React.React
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (!event.isPrimary || event.button !== 0 || isInteractiveTarget(event.target)) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
     gesture.current = { startX: event.clientX, startY: event.clientY, swiping: false, pointerId: event.pointerId };
   };
 
@@ -65,15 +66,11 @@ export function SwipeContainer({ children, onNext, onPrev }: Props): React.React
     document.body.style.userSelect = '';
 
     if (didSwipe && dx < 0) {
-      void animate(x, -window.innerWidth * 0.35, { duration: 0.16 }).then(() => {
-        x.set(0);
-        onNext();
-      });
+      x.set(0);
+      onNext();
     } else if (didSwipe && dx > 0) {
-      void animate(x, window.innerWidth * 0.35, { duration: 0.16 }).then(() => {
-        x.set(0);
-        onPrev();
-      });
+      x.set(0);
+      onPrev();
     } else {
       reset();
     }

@@ -17,6 +17,8 @@ export interface ArticleFrontmatter {
   reader_status?: ReaderStatus;
   reader_rated_at?: string;
   reader_read_seconds?: number;
+  reader_priority?: number;
+  reader_pinned?: boolean;
   [key: string]: unknown;
 }
 
@@ -41,6 +43,7 @@ export interface ArticleFilters {
   statuses: ReaderStatus[];
   sources: string[];
   query: string;
+  priorityOnly: boolean;
 }
 
 export interface PendingRating {

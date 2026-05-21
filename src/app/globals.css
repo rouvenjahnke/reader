@@ -38,7 +38,12 @@ mark {
   border-radius: 0.2rem;
   background: #fde047;
   padding: 0 0.12em;
-  color: inherit;
+  color: #171717;
+}
+
+.dark mark {
+  background: #facc15;
+  color: #171717;
 }
 
 .reader-safe-bottom {

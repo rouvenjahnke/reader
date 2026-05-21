@@ -4,11 +4,13 @@ import Link from 'next/link';
 import { Star } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
+import { priorityValue } from '@/lib/filters';
 import type { ArticleSummary, ReaderStatus } from '@/types/article';
 
 export function ArticleListItem({ article, style }: { article: ArticleSummary; style?: React.CSSProperties }): React.ReactElement {
   const fm = article.frontmatter;
   const status = fm.reader_status ?? 'unrated';
+  const priority = priorityValue(article);
 
   return (
     <div style={style} className="px-3 py-2">
@@ -27,6 +29,7 @@ export function ArticleListItem({ article, style }: { article: ArticleSummary; s
           {[fm.source, fm.author, relativeDate(fm.published ?? fm.fetched ?? article.lastModified)].filter(Boolean).join(' · ')}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          {priority > 0 ? <Badge className="border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">Priorität {priority}</Badge> : null}
           {fm.tags?.slice(0, 3).map((tag) => (
             <Badge key={tag}>{tag}</Badge>
           ))}

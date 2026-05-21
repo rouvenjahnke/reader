@@ -29,27 +29,45 @@ const articles: ArticleSummary[] = [
       tags: ['ai'],
       reader_status: 'relevant'
     }
+  },
+  {
+    id: 'c',
+    path: '/c.md',
+    frontmatter: {
+      title: 'OpenClaw capture',
+      source: 'OpenClaw',
+      author: 'Cara',
+      published: '2026-05-18T00:00:00.000Z',
+      score: 1,
+      tags: ['capture'],
+      reader_status: 'unrated',
+      reader_priority: 200
+    }
   }
 ];
 
 describe('filters', () => {
   it('filters by default unrated status', () => {
-    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated'], sources: [], query: '' }).map((article) => article.id)).toEqual(['a']);
+    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated'], sources: [], query: '', priorityOnly: false }).map((article) => article.id)).toEqual(['c', 'a']);
   });
 
   it('sorts by score', () => {
-    expect(filterAndSortArticles(articles, { sortMode: 'score', statuses: ['unrated', 'relevant'], sources: [], query: '' }).map((article) => article.id)).toEqual(['b', 'a']);
+    expect(filterAndSortArticles(articles, { sortMode: 'score', statuses: ['unrated', 'relevant'], sources: [], query: '', priorityOnly: false }).map((article) => article.id)).toEqual(['c', 'b', 'a']);
   });
 
   it('filters with fuzzy search', () => {
-    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], query: 'algebra' }).map((article) => article.id)).toEqual(['a']);
+    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], query: 'algebra', priorityOnly: false }).map((article) => article.id)).toEqual(['a']);
   });
 
   it('collects sources', () => {
-    expect(collectSources(articles)).toEqual(['arXiv', 'Blog']);
+    expect(collectSources(articles)).toEqual(['arXiv', 'Blog', 'OpenClaw']);
+  });
+
+  it('can show only prioritized articles', () => {
+    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], query: '', priorityOnly: true }).map((article) => article.id)).toEqual(['c']);
   });
 
   it('finds next unrated article', () => {
-    expect(nextUnratedAfter(articles, 'b')?.id).toBe('a');
+    expect(nextUnratedAfter(articles, 'b')?.id).toBe('c');
   });
 });

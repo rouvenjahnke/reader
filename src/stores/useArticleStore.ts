@@ -16,6 +16,7 @@ interface ArticleStore {
   setArticleScrollPosition: (id: string, y: number) => void;
   setSortMode: (sortMode: ArticleFilters['sortMode']) => void;
   setQuery: (query: string) => void;
+  togglePriorityOnly: () => void;
   toggleStatus: (status: ReaderStatus) => void;
   toggleSource: (source: string) => void;
   updateSummary: (article: ArticleSummary) => void;
@@ -38,6 +39,7 @@ export const useArticleStore = create<ArticleStore>()(
         })),
       setSortMode: (sortMode) => set((state) => ({ filters: { ...state.filters, sortMode } })),
       setQuery: (query) => set((state) => ({ filters: { ...state.filters, query } })),
+      togglePriorityOnly: () => set((state) => ({ filters: { ...state.filters, priorityOnly: !state.filters.priorityOnly } })),
       toggleStatus: (status) =>
         set((state) => {
           const exists = state.filters.statuses.includes(status);

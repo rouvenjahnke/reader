@@ -22,6 +22,7 @@ export function FilterBar({ articles, onRefresh, syncing }: { articles: ArticleS
   const filters = useArticleStore((state) => state.filters);
   const setSortMode = useArticleStore((state) => state.setSortMode);
   const setQuery = useArticleStore((state) => state.setQuery);
+  const togglePriorityOnly = useArticleStore((state) => state.togglePriorityOnly);
   const toggleStatus = useArticleStore((state) => state.toggleStatus);
   const toggleSource = useArticleStore((state) => state.toggleSource);
   const sources = collectSources(articles);
@@ -51,6 +52,9 @@ export function FilterBar({ articles, onRefresh, syncing }: { articles: ArticleS
           </Button>
           <Button type="button" size="sm" variant={filters.sortMode === 'score' ? 'default' : 'secondary'} onClick={() => setSortMode('score')}>
             Score
+          </Button>
+          <Button type="button" size="sm" variant={filters.priorityOnly ? 'default' : 'secondary'} onClick={togglePriorityOnly}>
+            Priorisiert
           </Button>
           {statuses.map((status) => (
             <Button

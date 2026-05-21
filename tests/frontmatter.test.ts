@@ -6,6 +6,8 @@ describe('frontmatter helpers', () => {
   const raw = `---
 title: "Test"
 score: "7.5"
+reader_priority: true
+reader_pinned: "yes"
 tags:
   - math
 ---
@@ -19,6 +21,8 @@ This is selected text.
     const parsed = parseArticle(raw);
     expect(parsed.frontmatter.title).toBe('Test');
     expect(parsed.frontmatter.score).toBe(7.5);
+    expect(parsed.frontmatter.reader_priority).toBe(100);
+    expect(parsed.frontmatter.reader_pinned).toBe(true);
     expect(parsed.frontmatter.reader_status).toBe('unrated');
     expect(parsed.body).toContain('selected text');
   });

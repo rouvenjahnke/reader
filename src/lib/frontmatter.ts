@@ -13,6 +13,8 @@ export function parseArticle(raw: string): { frontmatter: ArticleFrontmatter; bo
       tags: normalizeTags(data.tags),
       score: normalizeNumber(data.score),
       priority: normalizeNumber(data.priority),
+      reader_priority: normalizeReaderPriority(data.reader_priority),
+      reader_pinned: normalizeBoolean(data.reader_pinned),
       reader_status: normalizeReaderStatus(data.reader_status)
     },
     body: parsed.content
@@ -105,6 +107,21 @@ function normalizeNumber(value: unknown): number | undefined {
   if (typeof value === 'string') {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function normalizeReaderPriority(value: unknown): number | undefined {
+  if (value === true) return 100;
+  return normalizeNumber(value);
+}
+
+function normalizeBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', 'yes', 'ja', '1'].includes(normalized)) return true;
+    if (['false', 'no', 'nein', '0'].includes(normalized)) return false;
   }
   return undefined;
 }

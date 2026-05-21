@@ -8,7 +8,8 @@ export const defaultFilters: ArticleFilters = {
   sortMode: 'newest',
   statuses: defaultStatuses,
   sources: [],
-  query: ''
+  query: '',
+  priorityOnly: false
 };
 
 export function filterAndSortArticles(articles: ArticleSummary[], filters: ArticleFilters): ArticleSummary[] {
@@ -19,6 +20,7 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
     const status = article.frontmatter.reader_status ?? 'unrated';
     if (!activeStatuses.includes(status)) return false;
     if (activeSources.size > 0 && !activeSources.has(article.frontmatter.source ?? '')) return false;
+    if (filters.priorityOnly && priorityValue(article) <= 0) return false;
     return true;
   });
 
@@ -33,6 +35,9 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
   }
 
   return [...result].sort((a, b) => {
+    const priorityDelta = priorityValue(b) - priorityValue(a);
+    if (priorityDelta !== 0) return priorityDelta;
+
     if (filters.sortMode === 'score') {
       const scoreDelta = (b.frontmatter.score ?? 0) - (a.frontmatter.score ?? 0);
       if (scoreDelta !== 0) return scoreDelta;
@@ -52,6 +57,12 @@ export function nextUnratedAfter(articles: ArticleSummary[], currentId: string):
   const start = Math.max(0, articles.findIndex((article) => article.id === currentId));
   const rotated = [...articles.slice(start + 1), ...articles.slice(0, start + 1)];
   return rotated.find((article) => (article.frontmatter.reader_status ?? 'unrated') === 'unrated');
+}
+
+export function priorityValue(article: ArticleSummary): number {
+  if (typeof article.frontmatter.reader_priority === 'number') return article.frontmatter.reader_priority;
+  if (article.frontmatter.reader_pinned === true) return 100;
+  return 0;
 }
 
 function dateValue(value: string | undefined): number {

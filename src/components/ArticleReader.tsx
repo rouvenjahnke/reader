@@ -9,7 +9,7 @@ import { RatingActionBar } from '@/components/RatingActionBar';
 import { SwipeContainer } from '@/components/SwipeContainer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { filterAndSortArticles, nextUnratedAfter } from '@/lib/filters';
+import { filterAndSortArticles, nextUnratedAfter, priorityValue } from '@/lib/filters';
 import { highlightFirstOccurrence } from '@/lib/frontmatter';
 import { queueHighlight, queueRating, saveArticle, updateCachedBody, updateCachedRating } from '@/lib/cache';
 import { useArticleStore } from '@/stores/useArticleStore';
@@ -36,6 +36,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const previous = currentIndex > 0 ? ordered[currentIndex - 1] : undefined;
   const next = currentIndex >= 0 && currentIndex < ordered.length - 1 ? ordered[currentIndex + 1] : undefined;
   const tags = article.frontmatter.tags ?? [];
+  const priority = priorityValue(article);
 
   const goTo = useCallback(
     (id: string | undefined) => {
@@ -47,7 +48,9 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const captureSelection = useCallback(() => {
     const selection = window.getSelection();
     const text = selection?.toString().trim() ?? '';
-    setSelectedText(text.length > 1 ? text : '');
+    const markdownSource = selection ? selectedMarkdownSource(selection) : '';
+    const highlightText = markdownSource || text;
+    setSelectedText(highlightText.length > 1 ? highlightText : '');
   }, []);
 
   const handleRate = useCallback(
@@ -192,8 +195,11 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-          {tags.length > 0 ? (
+          {tags.length > 0 || priority > 0 ? (
             <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1 pl-[3.25rem]">
+              {priority > 0 ? (
+                <Badge className="shrink-0 border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">Priorität {priority}</Badge>
+              ) : null}
               {tags.map((tag) => (
                 <Badge key={tag} className="shrink-0">
                   {tag}
@@ -235,4 +241,30 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
       <RatingActionBar currentStatus={article.frontmatter.reader_status} onRate={handleRate} disabled={busy} />
     </div>
   );
+}
+
+function selectedMarkdownSource(selection: Selection): string {
+  if (selection.rangeCount === 0) return '';
+  const range = selection.getRangeAt(0);
+  const start = closestElement(range.startContainer);
+  const end = closestElement(range.endContainer);
+  const startSource = start?.closest('[data-md-source]')?.getAttribute('data-md-source') ?? '';
+  const endSource = end?.closest('[data-md-source]')?.getAttribute('data-md-source') ?? '';
+
+  if (startSource && startSource === endSource) return startSource;
+  if (startSource && !endSource) return startSource;
+  if (endSource && !startSource) return endSource;
+  return katexMarkdownSource(start) || katexMarkdownSource(end);
+}
+
+function closestElement(node: Node): Element | null {
+  return node instanceof Element ? node : node.parentElement;
+}
+
+function katexMarkdownSource(element: Element | null): string {
+  const katex = element?.closest('.katex, .katex-display');
+  const annotation = katex?.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim();
+  if (!annotation) return '';
+  const display = Boolean(katex?.closest('.katex-display'));
+  return display ? `$$${annotation}$$` : `$${annotation}$`;
 }

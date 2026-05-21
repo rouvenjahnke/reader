@@ -9,7 +9,11 @@ import type { ArticleFilters, ArticleSummary, ReaderStatus } from '@/types/artic
 interface ArticleStore {
   articles: ArticleSummary[];
   filters: ArticleFilters;
+  lastArticleId?: string;
+  articleScrollPositions: Record<string, number>;
   setArticles: (articles: ArticleSummary[]) => void;
+  setLastArticleId: (id: string) => void;
+  setArticleScrollPosition: (id: string, y: number) => void;
   setSortMode: (sortMode: ArticleFilters['sortMode']) => void;
   setQuery: (query: string) => void;
   toggleStatus: (status: ReaderStatus) => void;
@@ -22,7 +26,16 @@ export const useArticleStore = create<ArticleStore>()(
     (set) => ({
       articles: [],
       filters: defaultFilters,
+      articleScrollPositions: {},
       setArticles: (articles) => set({ articles }),
+      setLastArticleId: (id) => set({ lastArticleId: id }),
+      setArticleScrollPosition: (id, y) =>
+        set((state) => ({
+          articleScrollPositions: {
+            ...state.articleScrollPositions,
+            [id]: Math.max(0, Math.round(y))
+          }
+        })),
       setSortMode: (sortMode) => set((state) => ({ filters: { ...state.filters, sortMode } })),
       setQuery: (query) => set((state) => ({ filters: { ...state.filters, query } })),
       toggleStatus: (status) =>
@@ -44,7 +57,11 @@ export const useArticleStore = create<ArticleStore>()(
     }),
     {
       name: 'reader-state',
-      partialize: (state) => ({ filters: state.filters })
+      partialize: (state) => ({
+        filters: state.filters,
+        lastArticleId: state.lastArticleId,
+        articleScrollPositions: state.articleScrollPositions
+      })
     }
   )
 );

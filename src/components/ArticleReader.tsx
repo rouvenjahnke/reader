@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, Highlighter } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { RatingActionBar } from '@/components/RatingActionBar';
@@ -24,9 +24,13 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const [article, setArticle] = useState(initialArticle);
   const [selectedText, setSelectedText] = useState('');
   const [busy, setBusy] = useState(false);
+  const scrollSaveRef = useRef({ frame: 0, lastSavedAt: 0 });
   const articles = useArticleStore((state) => state.articles);
   const filters = useArticleStore((state) => state.filters);
   const updateSummary = useArticleStore((state) => state.updateSummary);
+  const savedScrollY = useArticleStore((state) => state.articleScrollPositions[initialArticle.id] ?? 0);
+  const setLastArticleId = useArticleStore((state) => state.setLastArticleId);
+  const setArticleScrollPosition = useArticleStore((state) => state.setArticleScrollPosition);
   const ordered = useMemo(() => filterAndSortArticles(articles, filters), [articles, filters]);
   const currentIndex = ordered.findIndex((item) => item.id === article.id);
   const previous = currentIndex > 0 ? ordered[currentIndex - 1] : undefined;
@@ -117,7 +121,34 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   useEffect(() => {
     setArticle(initialArticle);
     setSelectedText('');
-  }, [initialArticle]);
+    setLastArticleId(initialArticle.id);
+    const restore = window.setTimeout(() => {
+      const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      window.scrollTo({ top: Math.min(savedScrollY, maxY), behavior: 'auto' });
+    }, 80);
+    return () => window.clearTimeout(restore);
+  }, [initialArticle, savedScrollY, setLastArticleId]);
+
+  useEffect(() => {
+    const save = (force = false) => {
+      const now = Date.now();
+      if (!force && now - scrollSaveRef.current.lastSavedAt < 300) return;
+      scrollSaveRef.current.lastSavedAt = now;
+      window.cancelAnimationFrame(scrollSaveRef.current.frame);
+      scrollSaveRef.current.frame = window.requestAnimationFrame(() => setArticleScrollPosition(article.id, window.scrollY));
+    };
+
+    const onScroll = () => save();
+    const onPageHide = () => save(true);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      save(true);
+      window.cancelAnimationFrame(scrollSaveRef.current.frame);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, [article.id, setArticleScrollPosition]);
 
   useEffect(() => {
     document.addEventListener('selectionchange', captureSelection);

@@ -1,5 +1,7 @@
 'use client';
 
+import { BookOpen } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { FixedSizeList, type ListChildComponentProps } from 'react-window';
 
@@ -15,10 +17,12 @@ export default function HomePage(): React.ReactElement {
   const articles = useArticleStore((state) => state.articles);
   const filters = useArticleStore((state) => state.filters);
   const setArticles = useArticleStore((state) => state.setArticles);
+  const lastArticleId = useArticleStore((state) => state.lastArticleId);
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [height, setHeight] = useState(720);
   const filtered = useMemo(() => filterAndSortArticles(articles, filters), [articles, filters]);
+  const lastArticle = useMemo(() => articles.find((article) => article.id === lastArticleId), [articles, lastArticleId]);
 
   const refresh = async () => {
     setSyncing(true);
@@ -49,6 +53,19 @@ export default function HomePage(): React.ReactElement {
       <FilterBar articles={articles} onRefresh={refresh} syncing={syncing} />
       <section className="mx-auto max-w-[720px] py-3">
         {message ? <p className="px-4 pb-2 text-sm text-neutral-500">{message}</p> : null}
+        {lastArticle ? (
+          <div className="px-3 pb-2">
+            <Link
+              href={`/article/${lastArticle.id}`}
+              className="flex min-h-11 items-center gap-3 rounded-md border border-neutral-200 bg-white px-4 py-3 text-sm shadow-sm transition hover:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950 dark:hover:border-neutral-600"
+            >
+              <BookOpen className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">
+                Weiterlesen: <span className="font-medium">{lastArticle.frontmatter.title}</span>
+              </span>
+            </Link>
+          </div>
+        ) : null}
         {filtered.length === 0 ? (
           <div className="px-4 py-24 text-center text-neutral-500">Keine Artikel. Pipeline läuft täglich um 07:00.</div>
         ) : (

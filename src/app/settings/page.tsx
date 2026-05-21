@@ -67,10 +67,10 @@ export default function SettingsPage(): React.ReactElement {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-[720px] flex-col gap-6 px-4 py-8">
+    <main className="mx-auto flex min-h-screen max-w-[720px] flex-col gap-6 px-4 py-8 text-neutral-950 dark:text-neutral-50">
       <div>
         <h1 className="text-2xl font-semibold">Settings</h1>
-        <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+        <p className="mt-2 text-sm text-neutral-700 dark:text-neutral-400">
           These values are local UI defaults. Nextcloud credentials stay server-side in `.env`.
         </p>
       </div>
@@ -89,7 +89,7 @@ export default function SettingsPage(): React.ReactElement {
           <Input type="password" value="" readOnly placeholder="Serverseitig in .env setzen" />
         </label>
         <label className="grid gap-2 text-sm font-medium">
-          Base-Pfad
+          Base path
           <Input value={settings.basePath} onChange={(event) => update({ basePath: event.target.value })} />
         </label>
         <label className="grid gap-2 text-sm font-medium">
@@ -128,7 +128,7 @@ export default function SettingsPage(): React.ReactElement {
         <Button type="button" onClick={testConnection}>
           Test Connection
         </Button>
-        {message ? <p className="text-sm text-neutral-600 dark:text-neutral-400">{message}</p> : null}
+        {message ? <p className="text-sm text-neutral-700 dark:text-neutral-400">{message}</p> : null}
       </div>
 
       <section className="grid gap-3">
@@ -143,12 +143,12 @@ export default function SettingsPage(): React.ReactElement {
             </Button>
           </div>
         </div>
-        <div className="max-h-72 overflow-y-auto rounded-md border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
-          {syncLog.length === 0 ? <p className="px-3 py-8 text-center text-sm text-neutral-500">No sync entries yet.</p> : null}
+        <div className="max-h-72 overflow-y-auto rounded-md border border-neutral-300 bg-white text-neutral-950 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50">
+          {syncLog.length === 0 ? <p className="px-3 py-8 text-center text-sm text-neutral-700 dark:text-neutral-400">No sync entries yet.</p> : null}
           {syncLog.map((entry) => (
             <div key={entry.id} className="border-b border-neutral-100 px-3 py-2 last:border-b-0 dark:border-neutral-900">
               <p className={entry.level === 'error' ? 'text-sm text-red-700 dark:text-red-300' : 'text-sm text-neutral-800 dark:text-neutral-200'}>{entry.message}</p>
-              <p className="mt-1 text-xs text-neutral-500">{new Date(entry.createdAt).toLocaleString('en-US')}</p>
+              <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-500">{new Date(entry.createdAt).toLocaleString('en-US')}</p>
             </div>
           ))}
         </div>

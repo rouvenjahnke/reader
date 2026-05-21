@@ -181,7 +181,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
 
   return (
     <div className="min-h-screen pb-28">
-      <header className="sticky top-0 z-20 border-b border-neutral-200 bg-[var(--background)]/95 px-3 py-2 backdrop-blur dark:border-neutral-800">
+      <header className="sticky top-0 z-20 border-b border-neutral-300 bg-[var(--background)]/95 px-3 py-2 text-neutral-950 backdrop-blur dark:border-neutral-800 dark:text-neutral-50">
         <div className="mx-auto max-w-[760px]">
           <div className="flex items-center gap-2">
             <Button type="button" size="icon" variant="ghost" aria-label="Back" onClick={() => router.push('/')}>
@@ -191,7 +191,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
               <h1 className="truncate text-sm font-semibold" title={article.frontmatter.title}>
                 {article.frontmatter.title}
               </h1>
-              <p className="truncate text-xs text-neutral-500">
+              <p className="truncate text-xs text-neutral-700 dark:text-neutral-400">
                 {[article.frontmatter.source, typeof article.frontmatter.score === 'number' ? `Score ${article.frontmatter.score.toFixed(1)}` : undefined].filter(Boolean).join(' · ')}
               </p>
             </div>
@@ -218,7 +218,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
       </header>
 
       {selectedText ? (
-        <div className="fixed left-1/2 top-24 z-40 -translate-x-1/2 rounded-md border border-yellow-300 bg-yellow-100 p-2 shadow-lg dark:border-yellow-700 dark:bg-yellow-950" data-no-swipe>
+        <div className="fixed left-1/2 top-24 z-40 -translate-x-1/2 rounded-md border border-yellow-300 bg-yellow-100 p-2 text-neutral-950 shadow-lg dark:border-yellow-700 dark:bg-yellow-950 dark:text-neutral-50" data-no-swipe>
           <Button type="button" variant="highlight" size="sm" onClick={handleHighlight} disabled={busy}>
             <Highlighter className="h-4 w-4" /> Highlight
           </Button>
@@ -229,7 +229,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
         <SwipeContainer onNext={() => goTo(next?.id)} onPrev={() => goTo(previous?.id)}>
           <MarkdownRenderer content={article.body} />
           {article.frontmatter.url ? (
-            <div className="mt-12 border-t border-neutral-200 pt-6 dark:border-neutral-800" data-no-swipe>
+            <div className="mt-12 border-t border-neutral-300 pt-6 dark:border-neutral-800" data-no-swipe>
               <a
                 href={article.frontmatter.url}
                 target="_blank"
@@ -239,7 +239,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
                 <ExternalLink className="h-4 w-4 shrink-0" />
                 <span className="truncate">Open original source</span>
               </a>
-              <p className="mt-2 break-all text-xs text-neutral-500">{article.frontmatter.url}</p>
+              <p className="mt-2 break-all text-xs text-neutral-700 dark:text-neutral-400">{article.frontmatter.url}</p>
             </div>
           ) : null}
         </SwipeContainer>

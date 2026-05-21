@@ -1,11 +1,13 @@
 'use client';
 
-import { Monitor, Moon, Sun } from 'lucide-react';
+import { Monitor, Moon, RefreshCw, Sun, Trash2 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { flushPendingQueues } from '@/lib/cache';
+import { clearSyncLog, readSyncLog, type SyncLogEntry } from '@/lib/syncLog';
 
 interface Settings {
   nextcloudUrl: string;
@@ -27,10 +29,12 @@ export default function SettingsPage(): React.ReactElement {
   const { setTheme, theme } = useTheme();
   const [settings, setSettings] = useState<Settings>(defaults);
   const [message, setMessage] = useState('');
+  const [syncLog, setSyncLog] = useState<SyncLogEntry[]>([]);
 
   useEffect(() => {
     const raw = window.localStorage.getItem('reader-settings');
     if (raw) setSettings({ ...defaults, ...(JSON.parse(raw) as Partial<Settings>) });
+    setSyncLog(readSyncLog());
   }, []);
 
   const update = (patch: Partial<Settings>) => {
@@ -48,6 +52,18 @@ export default function SettingsPage(): React.ReactElement {
     } else {
       setMessage(`Fehler: ${await response.text()}`);
     }
+  };
+
+  const syncNow = async () => {
+    setMessage('Synchronisiere Queue...');
+    await flushPendingQueues();
+    setSyncLog(readSyncLog());
+    setMessage('Sync-Lauf abgeschlossen.');
+  };
+
+  const clearLogs = () => {
+    clearSyncLog();
+    setSyncLog([]);
   };
 
   return (
@@ -114,6 +130,29 @@ export default function SettingsPage(): React.ReactElement {
         </Button>
         {message ? <p className="text-sm text-neutral-600 dark:text-neutral-400">{message}</p> : null}
       </div>
+
+      <section className="grid gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">Sync-Log</h2>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" variant="secondary" onClick={syncNow}>
+              <RefreshCw className="h-4 w-4" /> Sync
+            </Button>
+            <Button type="button" size="sm" variant="secondary" onClick={clearLogs}>
+              <Trash2 className="h-4 w-4" /> Leeren
+            </Button>
+          </div>
+        </div>
+        <div className="max-h-72 overflow-y-auto rounded-md border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
+          {syncLog.length === 0 ? <p className="px-3 py-8 text-center text-sm text-neutral-500">Noch keine Sync-Einträge.</p> : null}
+          {syncLog.map((entry) => (
+            <div key={entry.id} className="border-b border-neutral-100 px-3 py-2 last:border-b-0 dark:border-neutral-900">
+              <p className={entry.level === 'error' ? 'text-sm text-red-700 dark:text-red-300' : 'text-sm text-neutral-800 dark:text-neutral-200'}>{entry.message}</p>
+              <p className="mt-1 text-xs text-neutral-500">{new Date(entry.createdAt).toLocaleString('de-DE')}</p>
+            </div>
+          ))}
+        </div>
+      </section>
     </main>
   );
 }

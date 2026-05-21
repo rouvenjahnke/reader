@@ -55,6 +55,7 @@ export interface PendingRating {
 
 export interface PendingHighlight {
   id: string;
+  articleId: string;
   path: string;
   text: string;
   createdAt: string;

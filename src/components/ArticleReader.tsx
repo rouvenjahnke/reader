@@ -9,9 +9,11 @@ import { RatingActionBar } from '@/components/RatingActionBar';
 import { SwipeContainer } from '@/components/SwipeContainer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { flushPendingQueues } from '@/lib/cache';
 import { filterAndSortArticles, nextUnratedAfter, priorityValue } from '@/lib/filters';
 import { highlightFirstOccurrence } from '@/lib/frontmatter';
 import { queueHighlight, queueRating, saveArticle, updateCachedBody, updateCachedRating } from '@/lib/cache';
+import { appendSyncLog } from '@/lib/syncLog';
 import { useArticleStore } from '@/stores/useArticleStore';
 import type { Article, ReaderStatus } from '@/types/article';
 
@@ -23,9 +25,9 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const router = useRouter();
   const [article, setArticle] = useState(initialArticle);
   const [selectedText, setSelectedText] = useState('');
-  const [highlightMessage, setHighlightMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const scrollSaveRef = useRef({ frame: 0, lastSavedAt: 0 });
+  const syncTimerRef = useRef<number | null>(null);
   const articles = useArticleStore((state) => state.articles);
   const filters = useArticleStore((state) => state.filters);
   const updateSummary = useArticleStore((state) => state.updateSummary);
@@ -41,10 +43,20 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
 
   const goTo = useCallback(
     (id: string | undefined) => {
-      if (id) router.push(`/article/${id}`);
+      if (!id) return;
+      void flushPendingQueues();
+      router.push(`/article/${id}`);
     },
     [router]
   );
+
+  const scheduleDeferredSync = useCallback(() => {
+    if (syncTimerRef.current) window.clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = window.setTimeout(() => {
+      syncTimerRef.current = null;
+      void flushPendingQueues();
+    }, 20_000);
+  }, []);
 
   const captureSelection = useCallback(() => {
     const selection = window.getSelection();
@@ -52,7 +64,6 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     const markdownSource = selection ? selectedMarkdownSource(selection) : '';
     const highlightText = markdownSource || text;
     setSelectedText(highlightText.length > 1 ? highlightText : '');
-    if (highlightText.length > 1) setHighlightMessage(null);
   }, []);
 
   const handleRate = useCallback(
@@ -94,49 +105,30 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const handleHighlight = useCallback(async () => {
     const text = selectedText.trim();
     if (!text || busy) return;
-    setBusy(true);
-    let optimisticApplied = false;
+    window.getSelection()?.removeAllRanges();
+    setSelectedText('');
 
     try {
       const optimisticBody = highlightFirstOccurrence(article.body, text);
       setArticle((current) => ({ ...current, body: optimisticBody }));
       await updateCachedBody(article.id, optimisticBody);
-      optimisticApplied = true;
-    } catch {
-      optimisticApplied = false;
-    }
-
-    try {
-      if (!navigator.onLine) throw new Error('offline');
-      const response = await fetch(`/api/articles/${article.id}/highlight`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text })
+      await queueHighlight({
+        id: `${article.id}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+        articleId: article.id,
+        path: article.path,
+        text,
+        createdAt: new Date().toISOString()
       });
-      if (!response.ok) throw new Error(await response.text());
-      const saved = (await response.json()) as Article;
-      setArticle(saved);
-      await saveArticle(saved);
-      setHighlightMessage('Markierung in Nextcloud gespeichert.');
+      appendSyncLog('info', `Markierung lokal vorgemerkt: ${article.path}`);
+      scheduleDeferredSync();
     } catch {
-      if (navigator.onLine) {
-        if (optimisticApplied) setArticle(article);
-        setHighlightMessage('Markierung konnte nicht in Nextcloud gespeichert werden.');
-      } else {
-        await queueHighlight({ id: article.id, path: article.path, text, createdAt: new Date().toISOString() });
-        setHighlightMessage('Offline gespeichert, Sync folgt beim nächsten Online-Status.');
-      }
-    } finally {
-      window.getSelection()?.removeAllRanges();
-      setSelectedText('');
-      setBusy(false);
+      appendSyncLog('error', `Markierung konnte lokal nicht gesetzt werden: ${article.path}`);
     }
-  }, [article, busy, selectedText]);
+  }, [article, busy, scheduleDeferredSync, selectedText]);
 
   useEffect(() => {
     setArticle(initialArticle);
     setSelectedText('');
-    setHighlightMessage(null);
     setLastArticleId(initialArticle.id);
     const restore = window.setTimeout(() => {
       const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
@@ -144,12 +136,6 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     }, 80);
     return () => window.clearTimeout(restore);
   }, [initialArticle, savedScrollY, setLastArticleId]);
-
-  useEffect(() => {
-    if (!highlightMessage) return;
-    const timeout = window.setTimeout(() => setHighlightMessage(null), 2500);
-    return () => window.clearTimeout(timeout);
-  }, [highlightMessage]);
 
   useEffect(() => {
     const save = (force = false) => {
@@ -166,6 +152,8 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     window.addEventListener('pagehide', onPageHide);
     return () => {
       save(true);
+      void flushPendingQueues();
+      if (syncTimerRef.current) window.clearTimeout(syncTimerRef.current);
       window.cancelAnimationFrame(scrollSaveRef.current.frame);
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('pagehide', onPageHide);
@@ -234,11 +222,6 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
           <Button type="button" variant="highlight" size="sm" onClick={handleHighlight} disabled={busy}>
             <Highlighter className="h-4 w-4" /> Markieren
           </Button>
-        </div>
-      ) : null}
-      {highlightMessage ? (
-        <div className="fixed left-1/2 top-24 z-40 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-lg dark:border-neutral-800 dark:bg-neutral-950" data-no-swipe>
-          {highlightMessage}
         </div>
       ) : null}
 

@@ -2,6 +2,7 @@
 
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
+import { appendSyncLog } from '@/lib/syncLog';
 import type { Article, ArticleSummary, PendingHighlight, PendingRating } from '@/types/article';
 
 interface ReaderDb extends DBSchema {
@@ -111,22 +112,45 @@ export async function flushPendingQueues(): Promise<void> {
   const highlights = await db.getAll('pending_highlights');
 
   for (const rating of ratings) {
-    const response = await fetch(`/api/articles/${rating.id}/rate`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ status: rating.status })
-    });
-    if (response.ok) await db.delete('pending_ratings', rating.id);
+    try {
+      const response = await fetch(`/api/articles/${rating.id}/rate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: rating.status })
+      });
+      if (response.ok) {
+        await db.delete('pending_ratings', rating.id);
+        appendSyncLog('info', `Rating synchronisiert: ${rating.path}`);
+      } else {
+        appendSyncLog('error', `Rating-Sync fehlgeschlagen: ${rating.path} (${response.status})`);
+      }
+    } catch (error) {
+      appendSyncLog('error', `Rating-Sync fehlgeschlagen: ${rating.path} (${errorMessage(error)})`);
+    }
   }
 
   for (const highlight of highlights) {
-    const response = await fetch(`/api/articles/${highlight.id}/highlight`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text: highlight.text })
-    });
-    if (response.ok) await db.delete('pending_highlights', highlight.id);
+    const articleId = highlight.articleId || highlight.id;
+    try {
+      const response = await fetch(`/api/articles/${articleId}/highlight`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: highlight.text })
+      });
+      if (response.ok) {
+        await db.delete('pending_highlights', highlight.id);
+        appendSyncLog('info', `Markierung synchronisiert: ${highlight.path}`);
+      } else {
+        appendSyncLog('error', `Markierungs-Sync fehlgeschlagen: ${highlight.path} (${response.status})`);
+      }
+    } catch (error) {
+      appendSyncLog('error', `Markierungs-Sync fehlgeschlagen: ${highlight.path} (${errorMessage(error)})`);
+    }
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'unbekannter Fehler';
 }
 
 function stripBody(article: Article): ArticleSummary {

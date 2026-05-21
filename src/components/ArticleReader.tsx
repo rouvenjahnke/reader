@@ -1,12 +1,13 @@
 'use client';
 
-import { ArrowLeft, ChevronLeft, ChevronRight, Highlighter } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, Highlighter } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { RatingActionBar } from '@/components/RatingActionBar';
 import { SwipeContainer } from '@/components/SwipeContainer';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { filterAndSortArticles, nextUnratedAfter } from '@/lib/filters';
 import { highlightFirstOccurrence } from '@/lib/frontmatter';
@@ -30,6 +31,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const currentIndex = ordered.findIndex((item) => item.id === article.id);
   const previous = currentIndex > 0 ? ordered[currentIndex - 1] : undefined;
   const next = currentIndex >= 0 && currentIndex < ordered.length - 1 ? ordered[currentIndex + 1] : undefined;
+  const tags = article.frontmatter.tags ?? [];
 
   const goTo = useCallback(
     (id: string | undefined) => {
@@ -100,13 +102,27 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
       setArticle(saved);
       await saveArticle(saved);
     } catch {
-      await queueHighlight({ id: article.id, path: article.path, text, createdAt: new Date().toISOString() });
+      if (navigator.onLine) {
+        setArticle(article);
+      } else {
+        await queueHighlight({ id: article.id, path: article.path, text, createdAt: new Date().toISOString() });
+      }
     } finally {
       window.getSelection()?.removeAllRanges();
       setSelectedText('');
       setBusy(false);
     }
   }, [article, busy, selectedText]);
+
+  useEffect(() => {
+    setArticle(initialArticle);
+    setSelectedText('');
+  }, [initialArticle]);
+
+  useEffect(() => {
+    document.addEventListener('selectionchange', captureSelection);
+    return () => document.removeEventListener('selectionchange', captureSelection);
+  }, [captureSelection]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -125,29 +141,40 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   return (
     <div className="min-h-screen pb-28">
       <header className="sticky top-0 z-20 border-b border-neutral-200 bg-[var(--background)]/95 px-3 py-2 backdrop-blur dark:border-neutral-800">
-        <div className="mx-auto flex max-w-[760px] items-center gap-2">
-          <Button type="button" size="icon" variant="ghost" aria-label="Zurueck" onClick={() => router.push('/')}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-semibold" title={article.frontmatter.title}>
-              {article.frontmatter.title}
-            </h1>
-            <p className="truncate text-xs text-neutral-500">
-              {[article.frontmatter.source, typeof article.frontmatter.score === 'number' ? `Score ${article.frontmatter.score.toFixed(1)}` : undefined].filter(Boolean).join(' · ')}
-            </p>
+        <div className="mx-auto max-w-[760px]">
+          <div className="flex items-center gap-2">
+            <Button type="button" size="icon" variant="ghost" aria-label="Zurueck" onClick={() => router.push('/')}>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-sm font-semibold" title={article.frontmatter.title}>
+                {article.frontmatter.title}
+              </h1>
+              <p className="truncate text-xs text-neutral-500">
+                {[article.frontmatter.source, typeof article.frontmatter.score === 'number' ? `Score ${article.frontmatter.score.toFixed(1)}` : undefined].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+            <Button type="button" size="icon" variant="secondary" onClick={() => goTo(previous?.id)} disabled={!previous} aria-label="Vorheriger Artikel">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button type="button" size="icon" variant="secondary" onClick={() => goTo(next?.id)} disabled={!next} aria-label="Naechster Artikel">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           </div>
-          <Button type="button" size="icon" variant="secondary" onClick={() => goTo(previous?.id)} disabled={!previous} aria-label="Vorheriger Artikel">
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button type="button" size="icon" variant="secondary" onClick={() => goTo(next?.id)} disabled={!next} aria-label="Naechster Artikel">
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+          {tags.length > 0 ? (
+            <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1 pl-[3.25rem]">
+              {tags.map((tag) => (
+                <Badge key={tag} className="shrink-0">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
         </div>
       </header>
 
       {selectedText ? (
-        <div className="fixed left-1/2 top-20 z-40 -translate-x-1/2 rounded-md border border-yellow-300 bg-yellow-100 p-2 shadow-lg dark:border-yellow-700 dark:bg-yellow-950">
+        <div className="fixed left-1/2 top-24 z-40 -translate-x-1/2 rounded-md border border-yellow-300 bg-yellow-100 p-2 shadow-lg dark:border-yellow-700 dark:bg-yellow-950" data-no-swipe>
           <Button type="button" variant="highlight" size="sm" onClick={handleHighlight} disabled={busy}>
             <Highlighter className="h-4 w-4" /> Markieren
           </Button>
@@ -157,6 +184,20 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
       <main className="mx-auto max-w-[760px] px-4 py-6" onMouseUp={captureSelection} onTouchEnd={() => window.setTimeout(captureSelection, 80)}>
         <SwipeContainer onNext={() => goTo(next?.id)} onPrev={() => goTo(previous?.id)}>
           <MarkdownRenderer content={article.body} />
+          {article.frontmatter.url ? (
+            <div className="mt-12 border-t border-neutral-200 pt-6 dark:border-neutral-800" data-no-swipe>
+              <a
+                href={article.frontmatter.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-11 max-w-full items-center gap-2 rounded-md bg-neutral-100 px-3 text-sm font-medium text-neutral-900 transition hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
+              >
+                <ExternalLink className="h-4 w-4 shrink-0" />
+                <span className="truncate">Originalquelle öffnen</span>
+              </a>
+              <p className="mt-2 break-all text-xs text-neutral-500">{article.frontmatter.url}</p>
+            </div>
+          ) : null}
         </SwipeContainer>
       </main>
 

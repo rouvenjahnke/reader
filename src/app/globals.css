@@ -48,6 +48,14 @@ mark {
 .reader-prose {
   font-family: Georgia, "Times New Roman", serif;
   line-height: 1.7;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.reader-swipe-shell {
+  touch-action: pan-y pinch-zoom;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .reader-prose h1,

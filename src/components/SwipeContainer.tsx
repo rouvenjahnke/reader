@@ -1,7 +1,8 @@
 'use client';
 
-import { motion, useMotionValue, useTransform } from 'framer-motion';
-import type { ReactNode } from 'react';
+import { animate, motion, useMotionValue, useTransform } from 'framer-motion';
+import type { PointerEvent, ReactNode } from 'react';
+import { useRef } from 'react';
 
 interface Props {
   children: ReactNode;
@@ -12,20 +13,86 @@ interface Props {
 export function SwipeContainer({ children, onNext, onPrev }: Props): React.ReactElement {
   const x = useMotionValue(0);
   const opacity = useTransform(x, [-260, 0, 260], [0.68, 1, 0.68]);
+  const gesture = useRef<{ startX: number; startY: number; swiping: boolean; pointerId: number | null }>({
+    startX: 0,
+    startY: 0,
+    swiping: false,
+    pointerId: null
+  });
+
+  const reset = () => {
+    gesture.current = { startX: 0, startY: 0, swiping: false, pointerId: null };
+    document.body.style.userSelect = '';
+    void animate(x, 0, { type: 'spring', stiffness: 420, damping: 38 });
+  };
+
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (!event.isPrimary || event.button !== 0 || isInteractiveTarget(event.target)) return;
+    gesture.current = { startX: event.clientX, startY: event.clientY, swiping: false, pointerId: event.pointerId };
+  };
+
+  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const current = gesture.current;
+    if (current.pointerId !== event.pointerId) return;
+    const dx = event.clientX - current.startX;
+    const dy = event.clientY - current.startY;
+    const selectedText = window.getSelection()?.toString().trim() ?? '';
+
+    if (selectedText) {
+      reset();
+      return;
+    }
+
+    if (!current.swiping) {
+      if (Math.abs(dx) < 18) return;
+      if (Math.abs(dx) < Math.abs(dy) * 1.35) {
+        reset();
+        return;
+      }
+      current.swiping = true;
+      document.body.style.userSelect = 'none';
+    }
+
+    x.set(Math.max(-window.innerWidth * 0.22, Math.min(window.innerWidth * 0.22, dx * 0.45)));
+  };
+
+  const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    const current = gesture.current;
+    if (current.pointerId !== event.pointerId) return;
+    const dx = event.clientX - current.startX;
+    const threshold = Math.min(110, window.innerWidth * 0.26);
+    const didSwipe = current.swiping && Math.abs(dx) > threshold;
+    document.body.style.userSelect = '';
+
+    if (didSwipe && dx < 0) {
+      void animate(x, -window.innerWidth * 0.35, { duration: 0.16 }).then(() => {
+        x.set(0);
+        onNext();
+      });
+    } else if (didSwipe && dx > 0) {
+      void animate(x, window.innerWidth * 0.35, { duration: 0.16 }).then(() => {
+        x.set(0);
+        onPrev();
+      });
+    } else {
+      reset();
+    }
+  };
 
   return (
     <motion.div
-      drag="x"
-      dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0.18}
+      className="reader-swipe-shell"
       style={{ x, opacity }}
-      onDragEnd={(_, info) => {
-        const threshold = Math.min(120, window.innerWidth * 0.3);
-        if (info.offset.x < -threshold) onNext();
-        if (info.offset.x > threshold) onPrev();
-      }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={reset}
     >
       {children}
     </motion.div>
   );
+}
+
+function isInteractiveTarget(target: EventTarget): boolean {
+  return target instanceof Element && Boolean(target.closest('a, button, input, textarea, select, [data-no-swipe]'));
 }

@@ -67,6 +67,17 @@ mark {
   color: #171717;
 }
 
+.reader-math-highlight {
+  border-radius: 0.25rem;
+  background: #fde047;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.dark .reader-math-highlight {
+  background: #facc15;
+}
+
 .reader-safe-bottom {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }

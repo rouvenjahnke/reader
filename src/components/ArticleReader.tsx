@@ -31,7 +31,6 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const articles = useArticleStore((state) => state.articles);
   const filters = useArticleStore((state) => state.filters);
   const updateSummary = useArticleStore((state) => state.updateSummary);
-  const savedScrollY = useArticleStore((state) => state.articleScrollPositions[initialArticle.id] ?? 0);
   const setLastArticleId = useArticleStore((state) => state.setLastArticleId);
   const setArticleScrollPosition = useArticleStore((state) => state.setArticleScrollPosition);
   const ordered = useMemo(() => filterAndSortArticles(articles, filters), [articles, filters]);
@@ -130,17 +129,18 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     setArticle(initialArticle);
     setSelectedText('');
     setLastArticleId(initialArticle.id);
+    const savedScrollY = useArticleStore.getState().articleScrollPositions[initialArticle.id] ?? 0;
     const restore = window.setTimeout(() => {
       const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
       window.scrollTo({ top: Math.min(savedScrollY, maxY), behavior: 'auto' });
     }, 80);
     return () => window.clearTimeout(restore);
-  }, [initialArticle, savedScrollY, setLastArticleId]);
+  }, [initialArticle, setLastArticleId]);
 
   useEffect(() => {
     const save = (force = false) => {
       const now = Date.now();
-      if (!force && now - scrollSaveRef.current.lastSavedAt < 300) return;
+      if (!force && now - scrollSaveRef.current.lastSavedAt < 1500) return;
       scrollSaveRef.current.lastSavedAt = now;
       window.cancelAnimationFrame(scrollSaveRef.current.frame);
       scrollSaveRef.current.frame = window.requestAnimationFrame(() => setArticleScrollPosition(article.id, window.scrollY));

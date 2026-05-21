@@ -15,7 +15,19 @@ interface HastNode {
   children?: HastNode[];
 }
 
-function renderHighlights(content: string): string {
+const highlightedMathPattern = /==(\$\$[\s\S]*?\$\$|\$[^$\n][\s\S]*?\$)==/g;
+
+function extractHighlightedMath(content: string): { content: string; highlightedMath: Set<string> } {
+  const highlightedMath = new Set<string>();
+  const cleaned = content.replace(highlightedMathPattern, (_, source: string) => {
+    highlightedMath.add(normalizeMathSource(source));
+    return source;
+  });
+
+  return { content: cleaned, highlightedMath };
+}
+
+function renderTextHighlights(content: string): string {
   return content.replace(/==([\s\S]+?)==/g, '<mark>$1</mark>');
 }
 
@@ -39,7 +51,7 @@ function rehypeMathSource() {
   };
 }
 
-function rehypeKatexSource() {
+function rehypeKatexSource(highlightedMath: Set<string>) {
   return (tree: HastNode) => {
     visit(tree, (node) => {
       if (node.type !== 'element') return;
@@ -51,12 +63,20 @@ function rehypeKatexSource() {
 
       const annotation = findTexAnnotation(node)?.trim();
       if (!annotation) return;
+      const source = isKatexDisplay ? `$$${annotation}$$` : `$${annotation}$`;
+      const normalizedSource = normalizeMathSource(source);
+
       node.properties = {
         ...node.properties,
-        dataMdSource: isKatexDisplay ? `$$${annotation}$$` : `$${annotation}$`
+        className: highlightedMath.has(normalizedSource) ? [...classes, 'reader-math-highlight'] : classes,
+        dataMdSource: source
       };
     });
   };
+}
+
+function normalizeMathSource(value: string): string {
+  return value.replace(/\s+/g, '');
 }
 
 function findTexAnnotation(node: HastNode): string | null {
@@ -78,11 +98,13 @@ function visit(node: HastNode, visitor: (node: HastNode) => void): void {
 }
 
 export function MarkdownRenderer({ content }: { content: string }): React.ReactElement {
+  const prepared = extractHighlightedMath(content);
+
   return (
     <article className="reader-prose prose prose-lg max-w-none dark:prose-invert prose-img:max-w-full prose-img:rounded-md prose-pre:rounded-md">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeRaw, rehypeMathSource, rehypeKatex, rehypeKatexSource, rehypePrism]}
+        rehypePlugins={[rehypeRaw, rehypeMathSource, rehypeKatex, [rehypeKatexSource, prepared.highlightedMath], rehypePrism]}
         components={{
           a: ({ href, children }) => (
             <a href={href} target="_blank" rel="noopener noreferrer">
@@ -92,7 +114,7 @@ export function MarkdownRenderer({ content }: { content: string }): React.ReactE
           img: ({ src, alt }) => <img src={src ?? ''} alt={alt ?? ''} loading="lazy" />
         }}
       >
-        {renderHighlights(content)}
+        {renderTextHighlights(prepared.content)}
       </ReactMarkdown>
     </article>
   );

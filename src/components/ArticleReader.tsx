@@ -30,6 +30,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const scrollSaveRef = useRef<{ timer: number | null; pendingY: number }>({ timer: null, pendingY: 0 });
   const syncTimerRef = useRef<number | null>(null);
   const proseRef = useRef<HTMLDivElement | null>(null);
+  const selectionRef = useRef<{ text: string; occurrenceIndex: number; overlapsHighlight: boolean } | null>(null);
   const articles = useArticleStore((state) => state.articles);
   const filters = useArticleStore((state) => state.filters);
   const updateSummary = useArticleStore((state) => state.updateSummary);
@@ -63,6 +64,10 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     const sel = window.getSelection();
     const proseRoot = proseRef.current;
     if (!sel || sel.rangeCount === 0 || !proseRoot) {
+      // Don't clear the latch here — the browser routinely clears the selection
+      // when the user taps the toolbar, and we want the action to still see the
+      // last meaningful selection. The latch is invalidated when the action runs
+      // or on article navigation / unmount.
       setSelectionState(null);
       return;
     }
@@ -81,7 +86,9 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     const occurrenceIndex = countOccurrencesInPrefix(proseRoot, range, markdownText);
     const overlapsHighlight = rangeOverlapsHighlight(range);
 
-    setSelectionState({ text: markdownText, occurrenceIndex, overlapsHighlight });
+    const snapshot = { text: markdownText, occurrenceIndex, overlapsHighlight };
+    selectionRef.current = snapshot;
+    setSelectionState(snapshot);
   }, []);
 
   const handleRate = useCallback(
@@ -122,8 +129,10 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
 
   const runHighlightAction = useCallback(
     async (action: 'add' | 'remove') => {
-      if (!selection || busy) return;
-      const { text, occurrenceIndex } = selection;
+      const snapshot = selectionRef.current ?? selection;
+      if (!snapshot || busy) return;
+      const { text, occurrenceIndex } = snapshot;
+      selectionRef.current = null;
       window.getSelection()?.removeAllRanges();
       setSelectionState(null);
 
@@ -169,6 +178,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   useEffect(() => {
     setArticle(initialArticle);
     setSelectionState(null);
+    selectionRef.current = null;
     setLastArticleId(initialArticle.id);
     const savedScrollY = useArticleStore.getState().articleScrollPositions[initialArticle.id] ?? 0;
     const restore = window.setTimeout(() => {
@@ -285,12 +295,41 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
         <div
           className="fixed left-1/2 top-24 z-40 flex -translate-x-1/2 gap-2 rounded-md border border-yellow-400 bg-yellow-50 p-2 text-neutral-950 shadow-lg dark:border-yellow-500 dark:bg-yellow-100"
           data-no-swipe
+          onMouseDown={(event) => event.preventDefault()}
+          onPointerDown={(event) => event.preventDefault()}
+          onTouchStart={(event) => event.stopPropagation()}
         >
-          <Button type="button" variant="highlight" size="sm" onClick={handleHighlight} disabled={busy}>
+          <Button
+            type="button"
+            variant="highlight"
+            size="sm"
+            disabled={busy}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              void handleHighlight();
+            }}
+            onTouchStart={(event) => {
+              event.preventDefault();
+              void handleHighlight();
+            }}
+          >
             <Highlighter className="h-4 w-4" /> Highlight
           </Button>
           {selection.overlapsHighlight ? (
-            <Button type="button" variant="secondary" size="sm" onClick={handleUnhighlight} disabled={busy}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                void handleUnhighlight();
+              }}
+              onTouchStart={(event) => {
+                event.preventDefault();
+                void handleUnhighlight();
+              }}
+            >
               <Eraser className="h-4 w-4" /> Remove
             </Button>
           ) : null}
@@ -348,72 +387,47 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
  * unless they're math, in which case it emits the source and skips the subtree.
  */
 function buildSelectionMarkdownSource(range: Range): string {
-  const root = range.commonAncestorContainer;
-  const startNode = range.startContainer;
-  const endNode = range.endContainer;
-  const startOffset = range.startOffset;
-  const endOffset = range.endOffset;
-
   let result = '';
-  let started = false;
-  let finished = false;
 
   const visit = (node: Node) => {
-    if (finished) return;
-
     if (node.nodeType === Node.ELEMENT_NODE) {
       const element = node as Element;
-
-      // If the range begins or ends inside this element, recurse into children.
-      // But for math elements that are FULLY inside the range, take the source.
-      const intersects = rangeIntersectsNode(range, element);
-      if (!intersects) return;
+      if (!rangeIntersectsNode(range, element)) return;
 
       if (element.matches('.katex, .katex-display') || element.classList.contains('katex')) {
-        // Emit math source only when entire element is contained in the range.
         const startsBefore = nodeContainsBefore(element, range.startContainer, range.startOffset);
         const endsAfter = nodeContainsAfter(element, range.endContainer, range.endOffset);
         if (startsBefore && endsAfter) {
           const source = mathSourceFor(element);
-          if (started) result += source;
-          else if (source) {
-            result += source;
-            started = true;
-          }
+          if (source) result += source;
           return;
         }
+        // Partial math selection: can't be represented in markdown – skip silently.
+        return;
       }
 
       for (const child of Array.from(element.childNodes)) {
-        if (finished) break;
         visit(child);
       }
       return;
     }
 
     if (node.nodeType !== Node.TEXT_NODE) return;
-    // Skip text nodes inside katex (handled by the element branch).
+
     const parentEl = (node as Text).parentElement;
     if (parentEl?.closest('.katex, .katex-display')) return;
+
+    if (!rangeIntersectsNode(range, node)) return;
 
     const text = (node as Text).data;
     let from = 0;
     let to = text.length;
-    if (node === startNode) {
-      from = startOffset;
-      started = true;
-    } else if (!started) {
-      // Haven't reached selection start yet.
-      return;
-    }
-    if (node === endNode) {
-      to = endOffset;
-      finished = true;
-    }
+    if (node === range.startContainer) from = range.startOffset;
+    if (node === range.endContainer) to = range.endOffset;
     if (to > from) result += text.slice(from, to);
   };
 
-  visit(root);
+  visit(range.commonAncestorContainer);
   return result;
 }
 

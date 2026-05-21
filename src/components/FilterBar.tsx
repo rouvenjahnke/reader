@@ -28,7 +28,7 @@ export function FilterBar({ articles, onRefresh, syncing }: { articles: ArticleS
   const sources = collectSources(articles);
 
   return (
-    <div className="sticky top-0 z-20 border-b border-neutral-300 bg-[var(--background)]/95 px-3 py-3 text-neutral-950 backdrop-blur dark:border-neutral-800 dark:text-neutral-50">
+    <div className="reader-surface-bar sticky top-0 z-20 border-b px-3 py-3 text-[var(--foreground)]">
       <div className="mx-auto flex max-w-[720px] flex-col gap-3">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">

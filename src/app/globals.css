@@ -3,6 +3,8 @@
 @import "katex/dist/katex.min.css";
 @import "prism-themes/themes/prism-nord.css";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   color-scheme: light;
   --background: #faf9f6;
@@ -12,22 +14,31 @@
   --border: #d8d5cf;
   --muted: #57534e;
   --link: #0f766e;
+  --accent: #0f766e;
+  --accent-contrast: #ffffff;
+  --accent-soft: #ccfbf1;
+  --accent-soft-foreground: #134e4a;
 }
 
 .dark {
   color-scheme: dark;
-  --background: #101010;
+  --background: #0b0b0b;
   --foreground: #f5f5f5;
-  --surface: #0f0f0f;
-  --surface-muted: #262626;
-  --border: #303030;
+  --surface: #161616;
+  --surface-muted: #1f1f1f;
+  --border: #2a2a2a;
   --muted: #a3a3a3;
   --link: #5eead4;
+  --accent: #2dd4bf;
+  --accent-contrast: #0b0b0b;
+  --accent-soft: #134e4a;
+  --accent-soft-foreground: #ccfbf1;
 }
 
 html {
   min-height: 100%;
   background: var(--background);
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -37,16 +48,10 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
   letter-spacing: 0;
+  overscroll-behavior-y: contain;
 }
 
 a {
-  color: inherit;
-}
-
-input,
-textarea,
-select,
-button {
   color: inherit;
 }
 
@@ -72,10 +77,17 @@ mark {
   background: #fde047;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+  color: #171717;
 }
 
 .dark .reader-math-highlight {
   background: #facc15;
+  color: #171717;
+}
+
+.reader-math-highlight .katex,
+.reader-math-highlight .katex * {
+  color: inherit;
 }
 
 .reader-safe-bottom {
@@ -107,8 +119,8 @@ mark {
 }
 
 .dark .reader-prose {
-  color: #f5f5f5;
-  --tw-prose-body: #f5f5f5;
+  color: #ededed;
+  --tw-prose-body: #ededed;
   --tw-prose-headings: #ffffff;
   --tw-prose-lead: #d4d4d4;
   --tw-prose-links: var(--link);
@@ -127,7 +139,7 @@ mark {
 }
 
 .reader-swipe-shell {
-  touch-action: pan-y pinch-zoom;
+  touch-action: pan-y;
   user-select: text;
   -webkit-user-select: text;
 }
@@ -140,4 +152,9 @@ mark {
 .reader-prose h6 {
   font-family: Arial, Helvetica, sans-serif;
   letter-spacing: 0;
+}
+
+.reader-surface-bar {
+  background: var(--background);
+  border-color: var(--border);
 }

@@ -86,7 +86,7 @@ export default function SettingsPage(): React.ReactElement {
         </label>
         <label className="grid gap-2 text-sm font-medium">
           Nextcloud App-Password
-          <Input type="password" value="" readOnly placeholder="Serverseitig in .env setzen" />
+          <Input type="password" value="" readOnly placeholder="Set server-side in .env" />
         </label>
         <label className="grid gap-2 text-sm font-medium">
           Base path

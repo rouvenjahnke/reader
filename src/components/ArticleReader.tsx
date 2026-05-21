@@ -26,7 +26,8 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const [article, setArticle] = useState(initialArticle);
   const [selectedText, setSelectedText] = useState('');
   const [busy, setBusy] = useState(false);
-  const scrollSaveRef = useRef({ frame: 0, lastSavedAt: 0 });
+  const [feedback, setFeedback] = useState<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null);
+  const scrollSaveRef = useRef<{ timer: number | null; pendingY: number }>({ timer: null, pendingY: 0 });
   const syncTimerRef = useRef<number | null>(null);
   const articles = useArticleStore((state) => state.articles);
   const filters = useArticleStore((state) => state.filters);
@@ -59,8 +60,12 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
 
   const captureSelection = useCallback(() => {
     const selection = window.getSelection();
-    const text = selection?.toString().trim() ?? '';
-    const markdownSource = selection ? selectedMarkdownSource(selection) : '';
+    if (!selection || selection.rangeCount === 0) {
+      setSelectedText('');
+      return;
+    }
+    const text = selection.toString().trim();
+    const markdownSource = selectedMarkdownSource(selection);
     const highlightText = markdownSource || text;
     setSelectedText(highlightText.length > 1 ? highlightText : '');
   }, []);
@@ -107,22 +112,47 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     window.getSelection()?.removeAllRanges();
     setSelectedText('');
 
+    let optimisticBody: string;
     try {
-      const optimisticBody = highlightFirstOccurrence(article.body, text);
-      setArticle((current) => ({ ...current, body: optimisticBody }));
-      await updateCachedBody(article.id, optimisticBody);
-      await queueHighlight({
-        id: `${article.id}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
-        articleId: article.id,
-        path: article.path,
-        text,
-        createdAt: new Date().toISOString()
-      });
-      appendSyncLog('info', `Highlight queued locally: ${article.path}`);
-      scheduleDeferredSync();
-    } catch {
-      appendSyncLog('error', `Could not create local highlight: ${article.path}`);
+      optimisticBody = highlightFirstOccurrence(article.body, text);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown error';
+      appendSyncLog('error', `Highlight not found in markdown: ${article.path} (${message})`);
+      setFeedback({ tone: 'error', message: 'Selection could not be located in the markdown.' });
+      return;
     }
+
+    setArticle((current) => ({ ...current, body: optimisticBody }));
+    await updateCachedBody(article.id, optimisticBody);
+
+    if (navigator.onLine) {
+      try {
+        const response = await fetch(`/api/articles/${article.id}/highlight`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const saved = (await response.json()) as Article;
+        setArticle(saved);
+        await saveArticle(saved);
+        appendSyncLog('info', `Highlight saved: ${article.path}`);
+        setFeedback({ tone: 'success', message: 'Highlight saved to Nextcloud.' });
+        return;
+      } catch (error) {
+        appendSyncLog('error', `Highlight upload failed, queued instead: ${article.path}`);
+      }
+    }
+
+    await queueHighlight({
+      id: `${article.id}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+      articleId: article.id,
+      path: article.path,
+      text,
+      createdAt: new Date().toISOString()
+    });
+    setFeedback({ tone: 'info', message: 'Highlight queued — will sync when online.' });
+    scheduleDeferredSync();
   }, [article, busy, scheduleDeferredSync, selectedText]);
 
   useEffect(() => {
@@ -138,25 +168,34 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   }, [initialArticle, setLastArticleId]);
 
   useEffect(() => {
-    const save = (force = false) => {
-      const now = Date.now();
-      if (!force && now - scrollSaveRef.current.lastSavedAt < 1500) return;
-      scrollSaveRef.current.lastSavedAt = now;
-      window.cancelAnimationFrame(scrollSaveRef.current.frame);
-      scrollSaveRef.current.frame = window.requestAnimationFrame(() => setArticleScrollPosition(article.id, window.scrollY));
+    const persist = () => {
+      scrollSaveRef.current.timer = null;
+      setArticleScrollPosition(article.id, scrollSaveRef.current.pendingY);
     };
 
-    const onScroll = () => save();
-    const onPageHide = () => save(true);
+    const onScroll = () => {
+      scrollSaveRef.current.pendingY = window.scrollY;
+      if (scrollSaveRef.current.timer !== null) return;
+      scrollSaveRef.current.timer = window.setTimeout(persist, 400);
+    };
+
+    const flush = () => {
+      if (scrollSaveRef.current.timer !== null) {
+        window.clearTimeout(scrollSaveRef.current.timer);
+        scrollSaveRef.current.timer = null;
+      }
+      scrollSaveRef.current.pendingY = window.scrollY;
+      setArticleScrollPosition(article.id, scrollSaveRef.current.pendingY);
+    };
+
     window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('pagehide', flush);
     return () => {
-      save(true);
+      flush();
       void flushPendingQueues();
       if (syncTimerRef.current) window.clearTimeout(syncTimerRef.current);
-      window.cancelAnimationFrame(scrollSaveRef.current.frame);
       window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('pagehide', flush);
     };
   }, [article.id, setArticleScrollPosition]);
 
@@ -164,6 +203,12 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     document.addEventListener('selectionchange', captureSelection);
     return () => document.removeEventListener('selectionchange', captureSelection);
   }, [captureSelection]);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = window.setTimeout(() => setFeedback(null), 3200);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -181,7 +226,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
 
   return (
     <div className="min-h-screen pb-28">
-      <header className="sticky top-0 z-20 border-b border-neutral-300 bg-[var(--background)]/95 px-3 py-2 text-neutral-950 backdrop-blur dark:border-neutral-800 dark:text-neutral-50">
+      <header className="reader-surface-bar sticky top-0 z-20 border-b px-3 py-2 text-[var(--foreground)]">
         <div className="mx-auto max-w-[760px]">
           <div className="flex items-center gap-2">
             <Button type="button" size="icon" variant="ghost" aria-label="Back" onClick={() => router.push('/')}>
@@ -218,10 +263,29 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
       </header>
 
       {selectedText ? (
-        <div className="fixed left-1/2 top-24 z-40 -translate-x-1/2 rounded-md border border-yellow-300 bg-yellow-100 p-2 text-neutral-950 shadow-lg dark:border-yellow-700 dark:bg-yellow-950 dark:text-neutral-50" data-no-swipe>
+        <div
+          className="fixed left-1/2 top-24 z-40 -translate-x-1/2 rounded-md border border-yellow-400 bg-yellow-50 p-2 text-neutral-950 shadow-lg dark:border-yellow-500 dark:bg-yellow-100"
+          data-no-swipe
+        >
           <Button type="button" variant="highlight" size="sm" onClick={handleHighlight} disabled={busy}>
             <Highlighter className="h-4 w-4" /> Highlight
           </Button>
+        </div>
+      ) : null}
+
+      {feedback ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed left-1/2 top-20 z-50 -translate-x-1/2 rounded-md px-3 py-2 text-sm shadow-lg ${
+            feedback.tone === 'success'
+              ? 'bg-emerald-600 text-white'
+              : feedback.tone === 'error'
+              ? 'bg-red-600 text-white'
+              : 'bg-neutral-900 text-white dark:bg-neutral-200 dark:text-neutral-900'
+          }`}
+        >
+          {feedback.message}
         </div>
       ) : null}
 
@@ -255,33 +319,34 @@ function selectedMarkdownSource(selection: Selection): string {
   const range = selection.getRangeAt(0);
   const start = closestElement(range.startContainer);
   const end = closestElement(range.endContainer);
-  const common = closestElement(range.commonAncestorContainer);
-  const startSource = markdownSourceForElement(start);
-  const endSource = markdownSourceForElement(end);
-  const commonSource = markdownSourceForElement(common);
 
-  if (startSource && startSource === endSource) return startSource;
-  if (startSource && !endSource) return startSource;
-  if (endSource && !startSource) return endSource;
-  if (commonSource) return commonSource;
-  return katexMarkdownSource(start) || katexMarkdownSource(end) || katexMarkdownSource(common);
+  const startAncestor = ancestorWithSource(start);
+  const endAncestor = ancestorWithSource(end);
+
+  if (startAncestor && startAncestor === endAncestor) {
+    return startAncestor.getAttribute('data-md-source') ?? '';
+  }
+
+  const startKatex = katexMarkdownSource(start);
+  const endKatex = katexMarkdownSource(end);
+  if (startKatex && startKatex === endKatex) return startKatex;
+
+  return '';
+}
+
+function ancestorWithSource(element: Element | null): Element | null {
+  return element?.closest('[data-md-source]') ?? null;
 }
 
 function closestElement(node: Node): Element | null {
   return node instanceof Element ? node : node.parentElement;
 }
 
-function markdownSourceForElement(element: Element | null): string {
-  const direct = element?.closest('[data-md-source]')?.getAttribute('data-md-source');
-  if (direct) return direct;
-  const nested = element?.querySelector('[data-md-source]')?.getAttribute('data-md-source');
-  return nested ?? '';
-}
-
 function katexMarkdownSource(element: Element | null): string {
   const katex = element?.closest('.katex, .katex-display');
-  const annotation = katex?.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim() ?? element?.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim();
+  if (!katex) return '';
+  const annotation = katex.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim();
   if (!annotation) return '';
-  const display = Boolean(katex?.closest('.katex-display'));
+  const display = Boolean(katex.closest('.katex-display'));
   return display ? `$$${annotation}$$` : `$${annotation}$`;
 }

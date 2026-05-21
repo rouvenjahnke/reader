@@ -13,7 +13,7 @@ interface Props {
 
 export function RatingActionBar({ currentStatus, disabled, onRate }: Props): React.ReactElement {
   return (
-    <div className="reader-safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-neutral-300 bg-white/95 px-3 pt-3 text-neutral-950 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95 dark:text-neutral-50">
+    <div className="reader-safe-bottom reader-surface-bar fixed inset-x-0 bottom-0 z-30 border-t px-3 pt-3 text-[var(--foreground)]">
       <div className="mx-auto grid max-w-[760px] grid-cols-3 gap-2">
         <Button
           type="button"

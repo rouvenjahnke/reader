@@ -120,12 +120,12 @@ export async function flushPendingQueues(): Promise<void> {
       });
       if (response.ok) {
         await db.delete('pending_ratings', rating.id);
-        appendSyncLog('info', `Rating synchronisiert: ${rating.path}`);
+        appendSyncLog('info', `Rating synced: ${rating.path}`);
       } else {
-        appendSyncLog('error', `Rating-Sync fehlgeschlagen: ${rating.path} (${response.status})`);
+        appendSyncLog('error', `Rating sync failed: ${rating.path} (${response.status})`);
       }
     } catch (error) {
-      appendSyncLog('error', `Rating-Sync fehlgeschlagen: ${rating.path} (${errorMessage(error)})`);
+      appendSyncLog('error', `Rating sync failed: ${rating.path} (${errorMessage(error)})`);
     }
   }
 
@@ -139,18 +139,18 @@ export async function flushPendingQueues(): Promise<void> {
       });
       if (response.ok) {
         await db.delete('pending_highlights', highlight.id);
-        appendSyncLog('info', `Markierung synchronisiert: ${highlight.path}`);
+        appendSyncLog('info', `Highlight synced: ${highlight.path}`);
       } else {
-        appendSyncLog('error', `Markierungs-Sync fehlgeschlagen: ${highlight.path} (${response.status})`);
+        appendSyncLog('error', `Highlight sync failed: ${highlight.path} (${response.status})`);
       }
     } catch (error) {
-      appendSyncLog('error', `Markierungs-Sync fehlgeschlagen: ${highlight.path} (${errorMessage(error)})`);
+      appendSyncLog('error', `Highlight sync failed: ${highlight.path} (${errorMessage(error)})`);
     }
   }
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'unbekannter Fehler';
+  return error instanceof Error ? error.message : 'unknown error';
 }
 
 function stripBody(article: Article): ArticleSummary {

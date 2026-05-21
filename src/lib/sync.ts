@@ -15,7 +15,7 @@ export async function fetchArticleSummaries(): Promise<{ articles: ArticleSummar
     return {
       articles: cached,
       offline: true,
-      error: error instanceof Error ? error.message : 'Sync fehlgeschlagen'
+      error: error instanceof Error ? error.message : 'Sync failed'
     };
   }
 }

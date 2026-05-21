@@ -29,7 +29,7 @@ export function ArticleListItem({ article, style }: { article: ArticleSummary; s
           {[fm.source, fm.author, relativeDate(fm.published ?? fm.fetched ?? article.lastModified)].filter(Boolean).join(' · ')}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {priority > 0 ? <Badge className="border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">Priorität {priority}</Badge> : null}
+          {priority > 0 ? <Badge className="border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">Priority {priority}</Badge> : null}
           {fm.tags?.slice(0, 3).map((tag) => (
             <Badge key={tag}>{tag}</Badge>
           ))}
@@ -59,7 +59,7 @@ function relativeDate(value: string | undefined): string | undefined {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return undefined;
   const days = Math.max(0, Math.round((Date.now() - timestamp) / 86_400_000));
-  if (days === 0) return 'heute';
-  if (days === 1) return 'vor 1 Tag';
-  return `vor ${days} Tagen`;
+  if (days === 0) return 'today';
+  if (days === 1) return '1 day ago';
+  return `${days} days ago`;
 }

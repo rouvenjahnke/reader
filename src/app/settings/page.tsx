@@ -44,21 +44,21 @@ export default function SettingsPage(): React.ReactElement {
   };
 
   const testConnection = async () => {
-    setMessage('Teste Verbindung...');
+    setMessage('Testing connection...');
     const response = await fetch('/api/settings/test', { method: 'POST' });
     if (response.ok) {
       const result = (await response.json()) as { count: number };
-      setMessage(`Verbindung ok, ${result.count} Markdown-Dateien gefunden.`);
+      setMessage(`Connection ok, ${result.count} Markdown files found.`);
     } else {
-      setMessage(`Fehler: ${await response.text()}`);
+      setMessage(`Error: ${await response.text()}`);
     }
   };
 
   const syncNow = async () => {
-    setMessage('Synchronisiere Queue...');
+    setMessage('Syncing queue...');
     await flushPendingQueues();
     setSyncLog(readSyncLog());
-    setMessage('Sync-Lauf abgeschlossen.');
+    setMessage('Sync run finished.');
   };
 
   const clearLogs = () => {
@@ -69,9 +69,9 @@ export default function SettingsPage(): React.ReactElement {
   return (
     <main className="mx-auto flex min-h-screen max-w-[720px] flex-col gap-6 px-4 py-8">
       <div>
-        <h1 className="text-2xl font-semibold">Einstellungen</h1>
+        <h1 className="text-2xl font-semibold">Settings</h1>
         <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-          Werte hier sind lokale UI-Defaults. Nextcloud-Credentials bleiben serverseitig in `.env`.
+          These values are local UI defaults. Nextcloud credentials stay server-side in `.env`.
         </p>
       </div>
 
@@ -93,7 +93,7 @@ export default function SettingsPage(): React.ReactElement {
           <Input value={settings.basePath} onChange={(event) => update({ basePath: event.target.value })} />
         </label>
         <label className="grid gap-2 text-sm font-medium">
-          Sync-Intervall Minuten
+          Sync interval minutes
           <Input type="number" min={5} value={settings.syncInterval} onChange={(event) => update({ syncInterval: event.target.value })} />
         </label>
       </section>
@@ -114,7 +114,7 @@ export default function SettingsPage(): React.ReactElement {
       </section>
 
       <section className="grid gap-3">
-        <h2 className="text-sm font-semibold">Schriftgröße</h2>
+        <h2 className="text-sm font-semibold">Font size</h2>
         <div className="flex gap-2">
           {(['S', 'M', 'L'] as const).map((size) => (
             <Button key={size} type="button" variant={settings.fontSize === size ? 'default' : 'secondary'} onClick={() => update({ fontSize: size })}>
@@ -139,16 +139,16 @@ export default function SettingsPage(): React.ReactElement {
               <RefreshCw className="h-4 w-4" /> Sync
             </Button>
             <Button type="button" size="sm" variant="secondary" onClick={clearLogs}>
-              <Trash2 className="h-4 w-4" /> Leeren
+              <Trash2 className="h-4 w-4" /> Clear
             </Button>
           </div>
         </div>
         <div className="max-h-72 overflow-y-auto rounded-md border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-950">
-          {syncLog.length === 0 ? <p className="px-3 py-8 text-center text-sm text-neutral-500">Noch keine Sync-Einträge.</p> : null}
+          {syncLog.length === 0 ? <p className="px-3 py-8 text-center text-sm text-neutral-500">No sync entries yet.</p> : null}
           {syncLog.map((entry) => (
             <div key={entry.id} className="border-b border-neutral-100 px-3 py-2 last:border-b-0 dark:border-neutral-900">
               <p className={entry.level === 'error' ? 'text-sm text-red-700 dark:text-red-300' : 'text-sm text-neutral-800 dark:text-neutral-200'}>{entry.message}</p>
-              <p className="mt-1 text-xs text-neutral-500">{new Date(entry.createdAt).toLocaleString('de-DE')}</p>
+              <p className="mt-1 text-xs text-neutral-500">{new Date(entry.createdAt).toLocaleString('en-US')}</p>
             </div>
           ))}
         </div>

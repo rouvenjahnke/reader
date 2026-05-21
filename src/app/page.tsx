@@ -28,7 +28,7 @@ export default function HomePage(): React.ReactElement {
     setSyncing(true);
     const result = await fetchArticleSummaries();
     setArticles(result.articles);
-    setMessage(result.offline ? `Sync fehlgeschlagen, Cache geladen. ${new Date().toLocaleTimeString('de-DE')}` : `Synchronisiert um ${new Date().toLocaleTimeString('de-DE')}`);
+    setMessage(result.offline ? `Sync failed, loaded cache. ${new Date().toLocaleTimeString('en-US')}` : `Synced at ${new Date().toLocaleTimeString('en-US')}`);
     setSyncing(false);
   };
 
@@ -61,13 +61,13 @@ export default function HomePage(): React.ReactElement {
             >
               <BookOpen className="h-4 w-4 shrink-0" />
               <span className="min-w-0 flex-1 truncate">
-                Weiterlesen: <span className="font-medium">{lastArticle.frontmatter.title}</span>
+                Continue reading: <span className="font-medium">{lastArticle.frontmatter.title}</span>
               </span>
             </Link>
           </div>
         ) : null}
         {filtered.length === 0 ? (
-          <div className="px-4 py-24 text-center text-neutral-500">Keine Artikel. Pipeline läuft täglich um 07:00.</div>
+          <div className="px-4 py-24 text-center text-neutral-500">No articles. The pipeline runs daily at 07:00.</div>
         ) : (
           <FixedSizeList height={height} width="100%" itemCount={filtered.length} itemSize={176} itemData={filtered}>
             {Row}

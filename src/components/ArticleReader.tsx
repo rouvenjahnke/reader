@@ -119,10 +119,10 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
         text,
         createdAt: new Date().toISOString()
       });
-      appendSyncLog('info', `Markierung lokal vorgemerkt: ${article.path}`);
+      appendSyncLog('info', `Highlight queued locally: ${article.path}`);
       scheduleDeferredSync();
     } catch {
-      appendSyncLog('error', `Markierung konnte lokal nicht gesetzt werden: ${article.path}`);
+      appendSyncLog('error', `Could not create local highlight: ${article.path}`);
     }
   }, [article, busy, scheduleDeferredSync, selectedText]);
 
@@ -184,7 +184,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
       <header className="sticky top-0 z-20 border-b border-neutral-200 bg-[var(--background)]/95 px-3 py-2 backdrop-blur dark:border-neutral-800">
         <div className="mx-auto max-w-[760px]">
           <div className="flex items-center gap-2">
-            <Button type="button" size="icon" variant="ghost" aria-label="Zurueck" onClick={() => router.push('/')}>
+            <Button type="button" size="icon" variant="ghost" aria-label="Back" onClick={() => router.push('/')}>
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div className="min-w-0 flex-1">
@@ -195,17 +195,17 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
                 {[article.frontmatter.source, typeof article.frontmatter.score === 'number' ? `Score ${article.frontmatter.score.toFixed(1)}` : undefined].filter(Boolean).join(' · ')}
               </p>
             </div>
-            <Button type="button" size="icon" variant="secondary" onClick={() => goTo(previous?.id)} disabled={!previous} aria-label="Vorheriger Artikel">
+            <Button type="button" size="icon" variant="secondary" onClick={() => goTo(previous?.id)} disabled={!previous} aria-label="Previous article">
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button type="button" size="icon" variant="secondary" onClick={() => goTo(next?.id)} disabled={!next} aria-label="Naechster Artikel">
+            <Button type="button" size="icon" variant="secondary" onClick={() => goTo(next?.id)} disabled={!next} aria-label="Next article">
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
           {tags.length > 0 || priority > 0 ? (
             <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1 pl-[3.25rem]">
               {priority > 0 ? (
-                <Badge className="shrink-0 border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">Priorität {priority}</Badge>
+                <Badge className="shrink-0 border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">Priority {priority}</Badge>
               ) : null}
               {tags.map((tag) => (
                 <Badge key={tag} className="shrink-0">
@@ -220,7 +220,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
       {selectedText ? (
         <div className="fixed left-1/2 top-24 z-40 -translate-x-1/2 rounded-md border border-yellow-300 bg-yellow-100 p-2 shadow-lg dark:border-yellow-700 dark:bg-yellow-950" data-no-swipe>
           <Button type="button" variant="highlight" size="sm" onClick={handleHighlight} disabled={busy}>
-            <Highlighter className="h-4 w-4" /> Markieren
+            <Highlighter className="h-4 w-4" /> Highlight
           </Button>
         </div>
       ) : null}
@@ -237,7 +237,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
                 className="inline-flex min-h-11 max-w-full items-center gap-2 rounded-md bg-neutral-100 px-3 text-sm font-medium text-neutral-900 transition hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
               >
                 <ExternalLink className="h-4 w-4 shrink-0" />
-                <span className="truncate">Originalquelle öffnen</span>
+                <span className="truncate">Open original source</span>
               </a>
               <p className="mt-2 break-all text-xs text-neutral-500">{article.frontmatter.url}</p>
             </div>
@@ -255,22 +255,32 @@ function selectedMarkdownSource(selection: Selection): string {
   const range = selection.getRangeAt(0);
   const start = closestElement(range.startContainer);
   const end = closestElement(range.endContainer);
-  const startSource = start?.closest('[data-md-source]')?.getAttribute('data-md-source') ?? '';
-  const endSource = end?.closest('[data-md-source]')?.getAttribute('data-md-source') ?? '';
+  const common = closestElement(range.commonAncestorContainer);
+  const startSource = markdownSourceForElement(start);
+  const endSource = markdownSourceForElement(end);
+  const commonSource = markdownSourceForElement(common);
 
   if (startSource && startSource === endSource) return startSource;
   if (startSource && !endSource) return startSource;
   if (endSource && !startSource) return endSource;
-  return katexMarkdownSource(start) || katexMarkdownSource(end);
+  if (commonSource) return commonSource;
+  return katexMarkdownSource(start) || katexMarkdownSource(end) || katexMarkdownSource(common);
 }
 
 function closestElement(node: Node): Element | null {
   return node instanceof Element ? node : node.parentElement;
 }
 
+function markdownSourceForElement(element: Element | null): string {
+  const direct = element?.closest('[data-md-source]')?.getAttribute('data-md-source');
+  if (direct) return direct;
+  const nested = element?.querySelector('[data-md-source]')?.getAttribute('data-md-source');
+  return nested ?? '';
+}
+
 function katexMarkdownSource(element: Element | null): string {
   const katex = element?.closest('.katex, .katex-display');
-  const annotation = katex?.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim();
+  const annotation = katex?.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim() ?? element?.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim();
   if (!annotation) return '';
   const display = Boolean(katex?.closest('.katex-display'));
   return display ? `$$${annotation}$$` : `$${annotation}$`;

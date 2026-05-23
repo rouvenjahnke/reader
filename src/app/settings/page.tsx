@@ -20,7 +20,7 @@ interface Settings {
 const defaults: Settings = {
   nextcloudUrl: '',
   username: '',
-  basePath: '/Reader-Pipeline/',
+  basePath: '/Workstation/Projects/maths/00_inbox/reader-pipeline/',
   syncInterval: '30',
   fontSize: 'M'
 };

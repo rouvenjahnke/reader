@@ -34,6 +34,16 @@ This is selected text.
     expect(parsed.body).toContain('selected text');
   });
 
+  it('repairs invalid YAML escapes from LaTeX in quoted frontmatter', () => {
+    const source = `---
+title: "Trace functions over \\(\\mathbb{F}_{q^n}\\)"
+---
+
+Body`;
+    const parsed = parseArticle(source);
+    expect(parsed.frontmatter.title).toBe('Trace functions over \\(\\mathbb{F}_{q^n}\\)');
+  });
+
   it('sets rating without changing body text', () => {
     const updated = setRating(raw, 'relevant', new Date('2026-05-20T12:00:00.000Z'));
     expect(updated).toContain('reader_status: relevant');

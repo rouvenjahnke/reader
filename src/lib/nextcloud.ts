@@ -9,7 +9,7 @@ import type { Article, ArticleSummary } from '@/types/article';
 let client: WebDAVClient | null = null;
 
 export function getBasePath(): string {
-  return process.env.NEXTCLOUD_BASE_PATH || '/Reader-Pipeline/';
+  return process.env.NEXTCLOUD_BASE_PATH || '/Workstation/Projects/maths/00_inbox/reader-pipeline/';
 }
 
 export function getNextcloudClient(): WebDAVClient {
@@ -35,22 +35,27 @@ export async function listMarkdownFiles(basePath = getBasePath()): Promise<FileS
 
 export async function listArticleSummaries(basePath = getBasePath()): Promise<ArticleSummary[]> {
   const files = await listMarkdownFiles(basePath);
-  const summaries = await Promise.all(
+  const summaries: Array<ArticleSummary | null> = await Promise.all(
     files.map(async (file) => {
-      const raw = await getArticleRaw(file.filename);
-      const parsed = parseArticle(raw);
-      return {
-        id: encodeArticleId(file.filename),
-        path: file.filename,
-        etag: file.etag ?? undefined,
-        lastModified: file.lastmod,
-        size: file.size,
-        frontmatter: parsed.frontmatter
-      };
+      try {
+        const raw = await getArticleRaw(file.filename);
+        const parsed = parseArticle(raw);
+        return {
+          id: encodeArticleId(file.filename),
+          path: file.filename,
+          etag: file.etag ?? undefined,
+          lastModified: file.lastmod,
+          size: file.size,
+          frontmatter: parsed.frontmatter
+        };
+      } catch (error) {
+        console.warn(`Skipping unreadable article ${file.filename}: ${errorMessage(error)}`);
+        return null;
+      }
     })
   );
 
-  return summaries;
+  return summaries.filter((summary): summary is ArticleSummary => summary !== null);
 }
 
 export async function getArticle(path: string): Promise<Article> {
@@ -84,4 +89,8 @@ export async function putArticleRaw(path: string, content: string): Promise<void
 export async function testConnection(basePath = getBasePath()): Promise<{ ok: true; count: number }> {
   const files = await listMarkdownFiles(basePath);
   return { ok: true, count: files.length };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'unknown error';
 }

@@ -20,7 +20,7 @@ Setze in `.env`:
 NEXTCLOUD_URL=https://nextcloud.example.com/remote.php/dav/files/<user>
 NEXTCLOUD_USERNAME=<user>
 NEXTCLOUD_APP_PASSWORD=<app-password>
-NEXTCLOUD_BASE_PATH=/Reader-Pipeline/
+NEXTCLOUD_BASE_PATH=/Workstation/Projects/maths/00_inbox/reader-pipeline/
 ```
 
 Alle WebDAV-Zugriffe laufen serverseitig über die Next.js API-Routes. Das Frontend bekommt keine Nextcloud-Credentials.

@@ -3,7 +3,7 @@ import matter from 'gray-matter';
 import type { ArticleFrontmatter, ReaderStatus } from '@/types/article';
 
 export function parseArticle(raw: string): { frontmatter: ArticleFrontmatter; body: string } {
-  const parsed = matter(raw);
+  const parsed = parseMatter(raw);
   const data = parsed.data as Record<string, unknown>;
 
   return {
@@ -22,7 +22,7 @@ export function parseArticle(raw: string): { frontmatter: ArticleFrontmatter; bo
 }
 
 export function setRating(raw: string, status: Exclude<ReaderStatus, 'unrated'>, ratedAt = new Date()): string {
-  const parsed = matter(raw);
+  const parsed = parseMatter(raw);
   parsed.data.reader_status = status;
   parsed.data.reader_rated_at = ratedAt.toISOString();
   return matter.stringify(parsed.content, parsed.data);
@@ -39,7 +39,7 @@ export function addHighlight(raw: string, selectedText: string, options: Highlig
     throw new Error('Selection is empty.');
   }
 
-  const parsed = matter(raw);
+  const parsed = parseMatter(raw);
   const highlighted = highlightFirstOccurrence(parsed.content, text, options);
   return matter.stringify(highlighted, parsed.data);
 }
@@ -50,9 +50,30 @@ export function removeHighlight(raw: string, selectedText: string, options: High
     throw new Error('Selection is empty.');
   }
 
-  const parsed = matter(raw);
+  const parsed = parseMatter(raw);
   const updated = removeHighlightInBody(parsed.content, text, options);
   return matter.stringify(updated, parsed.data);
+}
+
+function parseMatter(raw: string): matter.GrayMatterFile<string> {
+  try {
+    return matter(raw);
+  } catch (error) {
+    const repaired = repairInvalidYamlEscapes(raw);
+    if (repaired === raw) throw error;
+    return matter(repaired);
+  }
+}
+
+export function repairInvalidYamlEscapes(raw: string): string {
+  if (!raw.startsWith('---')) return raw;
+  const end = raw.indexOf('\n---', 3);
+  if (end < 0) return raw;
+
+  const frontmatter = raw.slice(0, end);
+  const body = raw.slice(end);
+  const repaired = frontmatter.replace(/\\(?![0abtnvfre "\\/N_LPxuU\r\n])/g, '\\\\');
+  return `${repaired}${body}`;
 }
 
 export function highlightFirstOccurrence(body: string, selectedText: string, options: HighlightOptions = {}): string {

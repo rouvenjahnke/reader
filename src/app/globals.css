@@ -152,6 +152,78 @@ mark {
 .reader-prose h6 {
   font-family: Arial, Helvetica, sans-serif;
   letter-spacing: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+.reader-prose h1 {
+  font-size: clamp(1.75rem, 7vw, 2.45rem);
+  line-height: 1.08;
+  margin-top: 1.6rem;
+  margin-bottom: 1.2rem;
+}
+
+.reader-prose h2 {
+  font-size: clamp(1.35rem, 5.2vw, 1.9rem);
+  line-height: 1.16;
+  margin-top: 2rem;
+  margin-bottom: 0.8rem;
+}
+
+.reader-prose h3 {
+  font-size: clamp(1.15rem, 4.4vw, 1.45rem);
+  line-height: 1.22;
+}
+
+.reader-prose p,
+.reader-prose li,
+.reader-prose blockquote,
+.reader-prose td,
+.reader-prose th {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.reader-prose a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.15em;
+}
+
+.reader-prose pre,
+.reader-prose table,
+.reader-prose .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.reader-prose code {
+  white-space: break-spaces;
+}
+
+.reader-prose pre code {
+  white-space: pre;
+}
+
+.reader-prose .katex-display {
+  padding-bottom: 0.25rem;
+}
+
+@media (max-width: 520px) {
+  .reader-prose {
+    font-size: 1.05rem;
+  }
+
+  .reader-prose h1 {
+    font-size: clamp(1.55rem, 8vw, 2rem);
+  }
+
+  .reader-prose h2 {
+    font-size: clamp(1.25rem, 6vw, 1.6rem);
+  }
 }
 
 .reader-surface-bar {

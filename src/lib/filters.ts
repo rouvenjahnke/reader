@@ -12,9 +12,14 @@ export const defaultFilters: ArticleFilters = {
   priorityOnly: false
 };
 
-export function filterAndSortArticles(articles: ArticleSummary[], filters: ArticleFilters): ArticleSummary[] {
+export interface SortPreferences {
+  pinPriorityOnTop?: boolean;
+}
+
+export function filterAndSortArticles(articles: ArticleSummary[], filters: ArticleFilters, prefs: SortPreferences = {}): ArticleSummary[] {
   const activeStatuses = filters.statuses.length > 0 ? filters.statuses : defaultStatuses;
   const activeSources = new Set(filters.sources);
+  const pinPriority = prefs.pinPriorityOnTop ?? true;
 
   let result = articles.filter((article) => {
     const status = article.frontmatter.reader_status ?? 'unrated';
@@ -35,8 +40,10 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
   }
 
   return [...result].sort((a, b) => {
-    const priorityDelta = priorityValue(b) - priorityValue(a);
-    if (priorityDelta !== 0) return priorityDelta;
+    if (pinPriority) {
+      const priorityDelta = priorityValue(b) - priorityValue(a);
+      if (priorityDelta !== 0) return priorityDelta;
+    }
 
     if (filters.sortMode === 'score') {
       const scoreDelta = (b.frontmatter.score ?? 0) - (a.frontmatter.score ?? 0);

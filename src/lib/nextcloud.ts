@@ -29,46 +29,132 @@ export function getNextcloudClient(): WebDAVClient {
 
 export async function listMarkdownFiles(basePath = getBasePath()): Promise<FileStat[]> {
   const c = getNextcloudClient();
-  const files = await c.getDirectoryContents(basePath, { deep: true });
+  const files = (await c.getDirectoryContents(basePath, { deep: true })) as FileStat[];
   return files.filter((item) => item.type === 'file' && item.basename.endsWith('.md'));
+}
+
+interface CacheEntry {
+  etag: string;
+  lastmod: string;
+  size: number;
+  summary: ArticleSummary;
+  article?: Article;
+}
+
+const summaryCache: Map<string, CacheEntry> = new Map();
+const CONCURRENCY = 6;
+
+function freshFromCache(file: FileStat): ArticleSummary | undefined {
+  const entry = summaryCache.get(file.filename);
+  if (!entry) return undefined;
+  if (entry.etag === (file.etag ?? '') && entry.lastmod === (file.lastmod ?? '') && entry.size === (file.size ?? 0)) {
+    return entry.summary;
+  }
+  return undefined;
+}
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers: Array<Promise<void>> = [];
+
+  const worker = async () => {
+    while (true) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= items.length) return;
+      results[index] = await fn(items[index]);
+    }
+  };
+
+  for (let i = 0; i < Math.min(limit, items.length); i += 1) {
+    workers.push(worker());
+  }
+  await Promise.all(workers);
+  return results;
 }
 
 export async function listArticleSummaries(basePath = getBasePath()): Promise<ArticleSummary[]> {
   const files = await listMarkdownFiles(basePath);
-  const summaries: Array<ArticleSummary | null> = await Promise.all(
-    files.map(async (file) => {
-      try {
-        const raw = await getArticleRaw(file.filename);
-        const parsed = parseArticle(raw);
-        return {
-          id: encodeArticleId(file.filename),
+  const present = new Set(files.map((file) => file.filename));
+
+  for (const key of summaryCache.keys()) {
+    if (!present.has(key)) summaryCache.delete(key);
+  }
+
+  const summaries = await mapWithConcurrency<FileStat, ArticleSummary | null>(files, CONCURRENCY, async (file) => {
+    const cached = freshFromCache(file);
+    if (cached) return cached;
+
+    try {
+      const raw = await getArticleRaw(file.filename);
+      const parsed = parseArticle(raw);
+      const summary: ArticleSummary = {
+        id: encodeArticleId(file.filename),
+        path: file.filename,
+        etag: file.etag ?? undefined,
+        lastModified: file.lastmod,
+        size: file.size,
+        frontmatter: parsed.frontmatter
+      };
+      summaryCache.set(file.filename, {
+        etag: file.etag ?? '',
+        lastmod: file.lastmod ?? '',
+        size: file.size ?? 0,
+        summary,
+        article: {
+          id: summary.id,
           path: file.filename,
-          etag: file.etag ?? undefined,
-          lastModified: file.lastmod,
-          size: file.size,
-          frontmatter: parsed.frontmatter
-        };
-      } catch (error) {
-        console.warn(`Skipping unreadable article ${file.filename}: ${errorMessage(error)}`);
-        return null;
-      }
-    })
-  );
+          etag: summary.etag,
+          lastModified: summary.lastModified,
+          size: summary.size,
+          frontmatter: parsed.frontmatter,
+          body: parsed.body,
+          raw
+        }
+      });
+      return summary;
+    } catch (error) {
+      console.warn(`Skipping unreadable article ${file.filename}: ${errorMessage(error)}`);
+      return null;
+    }
+  });
 
   return summaries.filter((summary): summary is ArticleSummary => summary !== null);
 }
 
 export async function getArticle(path: string): Promise<Article> {
+  const cached = summaryCache.get(path);
+  if (cached?.article) return cached.article;
+
   const raw = await getArticleRaw(path);
   const parsed = parseArticle(raw);
 
-  return {
+  const article: Article = {
     id: encodeArticleId(path),
     path,
     frontmatter: parsed.frontmatter,
     body: parsed.body,
     raw
   };
+
+  if (cached) {
+    cached.article = article;
+    cached.summary = {
+      id: article.id,
+      path,
+      etag: cached.etag,
+      lastModified: cached.lastmod,
+      size: cached.size,
+      frontmatter: parsed.frontmatter
+    };
+  }
+
+  return article;
+}
+
+export function invalidateArticleCache(path: string): void {
+  summaryCache.delete(path);
 }
 
 export async function getArticleRaw(path: string): Promise<string> {
@@ -84,6 +170,7 @@ export async function putArticleRaw(path: string, content: string): Promise<void
     overwrite: true,
     contentLength: buffer.byteLength
   });
+  invalidateArticleCache(path);
 }
 
 export async function testConnection(basePath = getBasePath()): Promise<{ ok: true; count: number }> {

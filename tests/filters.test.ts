@@ -70,4 +70,22 @@ describe('filters', () => {
   it('finds next unrated article', () => {
     expect(nextUnratedAfter(articles, 'b')?.id).toBe('c');
   });
+
+  it('does not pin priority when pinPriorityOnTop=false (sort newest)', () => {
+    expect(
+      filterAndSortArticles(
+        articles,
+        { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], query: '', priorityOnly: false },
+        { pinPriorityOnTop: false }
+      ).map((article) => article.id)
+    ).toEqual(['b', 'a', 'c']);
+  });
+
+  it('pins priority by default even when sorted by newest', () => {
+    expect(
+      filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], query: '', priorityOnly: false }).map(
+        (article) => article.id
+      )
+    ).toEqual(['c', 'b', 'a']);
+  });
 });

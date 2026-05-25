@@ -11,7 +11,9 @@ interface ArticleStore {
   filters: ArticleFilters;
   lastArticleId?: string;
   articleScrollPositions: Record<string, number>;
+  hydrated: boolean;
   setArticles: (articles: ArticleSummary[]) => void;
+  hydrateArticles: (articles: ArticleSummary[]) => void;
   setLastArticleId: (id: string) => void;
   setArticleScrollPosition: (id: string, y: number) => void;
   setSortMode: (sortMode: ArticleFilters['sortMode']) => void;
@@ -19,6 +21,7 @@ interface ArticleStore {
   togglePriorityOnly: () => void;
   toggleStatus: (status: ReaderStatus) => void;
   toggleSource: (source: string) => void;
+  resetFilters: (filters: ArticleFilters) => void;
   updateSummary: (article: ArticleSummary) => void;
 }
 
@@ -28,7 +31,10 @@ export const useArticleStore = create<ArticleStore>()(
       articles: [],
       filters: defaultFilters,
       articleScrollPositions: {},
-      setArticles: (articles) => set({ articles }),
+      hydrated: false,
+      setArticles: (articles) => set({ articles, hydrated: true }),
+      hydrateArticles: (articles) =>
+        set((state) => (state.hydrated ? state : { articles, hydrated: true })),
       setLastArticleId: (id) => set({ lastArticleId: id }),
       setArticleScrollPosition: (id, y) =>
         set((state) => ({
@@ -52,6 +58,7 @@ export const useArticleStore = create<ArticleStore>()(
           const sources = exists ? state.filters.sources.filter((item) => item !== source) : [...state.filters.sources, source];
           return { filters: { ...state.filters, sources } };
         }),
+      resetFilters: (filters) => set({ filters }),
       updateSummary: (article) =>
         set((state) => ({
           articles: state.articles.map((item) => (item.id === article.id ? article : item))

@@ -15,6 +15,7 @@ import { highlightFirstOccurrence, removeHighlightInBody } from '@/lib/frontmatt
 import { queueHighlight, queueRating, saveArticle, updateCachedBody, updateCachedRating } from '@/lib/cache';
 import { appendSyncLog } from '@/lib/syncLog';
 import { useArticleStore } from '@/stores/useArticleStore';
+import { usePreferencesStore } from '@/stores/usePreferencesStore';
 import type { Article, ReaderStatus } from '@/types/article';
 
 interface Props {
@@ -36,7 +37,12 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const updateSummary = useArticleStore((state) => state.updateSummary);
   const setLastArticleId = useArticleStore((state) => state.setLastArticleId);
   const setArticleScrollPosition = useArticleStore((state) => state.setArticleScrollPosition);
-  const ordered = useMemo(() => filterAndSortArticles(articles, filters), [articles, filters]);
+  const pinPriorityOnTop = usePreferencesStore((state) => state.pinPriorityOnTop);
+  const fontSize = usePreferencesStore((state) => state.fontSize);
+  const ordered = useMemo(
+    () => filterAndSortArticles(articles, filters, { pinPriorityOnTop }),
+    [articles, filters, pinPriorityOnTop]
+  );
   const currentIndex = ordered.findIndex((item) => item.id === article.id);
   const previous = currentIndex > 0 ? ordered[currentIndex - 1] : undefined;
   const next = currentIndex >= 0 && currentIndex < ordered.length - 1 ? ordered[currentIndex + 1] : undefined;
@@ -355,7 +361,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
       <main className="mx-auto max-w-[760px] px-4 py-6" onMouseUp={captureSelection} onTouchEnd={() => window.setTimeout(captureSelection, 80)}>
         <SwipeContainer onNext={() => goTo(next?.id)} onPrev={() => goTo(previous?.id)}>
           <div ref={proseRef}>
-            <MarkdownRenderer content={article.body} />
+            <MarkdownRenderer content={article.body} fontSize={fontSize} />
           </div>
           {article.frontmatter.url ? (
             <div className="mt-12 border-t border-neutral-300 pt-6 dark:border-neutral-800" data-no-swipe>

@@ -97,11 +97,21 @@ function visit(node: HastNode, visitor: (node: HastNode) => void): void {
   for (const child of node.children ?? []) visit(child, visitor);
 }
 
-export function MarkdownRenderer({ content }: { content: string }): React.ReactElement {
+export type ReaderFontSize = 'S' | 'M' | 'L' | 'XL';
+
+const proseSize: Record<ReaderFontSize, string> = {
+  S: 'prose-sm',
+  M: 'prose-base',
+  L: 'prose-lg',
+  XL: 'prose-xl'
+};
+
+export function MarkdownRenderer({ content, fontSize = 'M' }: { content: string; fontSize?: ReaderFontSize }): React.ReactElement {
   const prepared = extractHighlightedMath(content);
+  const size = proseSize[fontSize] ?? proseSize.M;
 
   return (
-    <article className="reader-prose prose prose-lg max-w-none dark:prose-invert prose-img:max-w-full prose-img:rounded-md prose-pre:rounded-md">
+    <article className={`reader-prose prose ${size} max-w-none dark:prose-invert prose-img:max-w-full prose-img:rounded-md prose-pre:rounded-md`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeRaw, rehypeMathSource, rehypeKatex, [rehypeKatexSource, prepared.highlightedMath], rehypePrism]}

@@ -171,6 +171,12 @@ interface StrippedBody {
   map: number[];
 }
 
+interface MappedText {
+  text: string;
+  starts: number[];
+  ends: number[];
+}
+
 function stripHighlightMarkers(body: string): StrippedBody {
   let text = '';
   const map: number[] = [];
@@ -190,22 +196,28 @@ function stripHighlightMarkers(body: string): StrippedBody {
 
 function locateRange(body: string, needle: string, occurrenceIndex: number): { start: number; end: number } | null {
   const stripped = stripHighlightMarkers(body);
+  const rendered = buildRenderedMarkdownMap(stripped.text);
+  const renderedRange = locateInMappedText(rendered, needle, occurrenceIndex, stripped.map);
+  if (renderedRange) return renderedRange;
 
-  // Exact match (case-sensitive) – occurrence-aware
+  const source = buildIdentityMap(stripped.text);
+  return locateInMappedText(source, needle, occurrenceIndex, stripped.map);
+}
+
+function locateInMappedText(mapped: MappedText, needle: string, occurrenceIndex: number, sourceMap: number[]): { start: number; end: number } | null {
   let from = 0;
   let skipped = 0;
   while (true) {
-    const idx = stripped.text.indexOf(needle, from);
+    const idx = mapped.text.indexOf(needle, from);
     if (idx < 0) break;
     if (skipped >= occurrenceIndex) {
-      return { start: stripped.map[idx], end: stripped.map[idx + needle.length] };
+      return mappedRange(mapped, idx, needle.length, sourceMap);
     }
     skipped += 1;
     from = idx + Math.max(1, needle.length);
   }
 
-  // Whitespace-tolerant match: collapse whitespace in both sides and remap indices.
-  const collapsed = collapseWhitespace(stripped.text);
+  const collapsed = collapseMappedWhitespace(mapped);
   const collapsedNeedle = needle.replace(/\s+/g, ' ').trim();
   let cFrom = 0;
   let cSkipped = 0;
@@ -213,9 +225,7 @@ function locateRange(body: string, needle: string, occurrenceIndex: number): { s
     const cIdx = collapsed.text.indexOf(collapsedNeedle, cFrom);
     if (cIdx < 0) break;
     if (cSkipped >= occurrenceIndex) {
-      const startStripped = collapsed.map[cIdx];
-      const endStripped = collapsed.map[cIdx + collapsedNeedle.length];
-      return { start: stripped.map[startStripped], end: stripped.map[endStripped] };
+      return mappedRange(collapsed, cIdx, collapsedNeedle.length, sourceMap);
     }
     cSkipped += 1;
     cFrom = cIdx + Math.max(1, collapsedNeedle.length);
@@ -224,29 +234,153 @@ function locateRange(body: string, needle: string, occurrenceIndex: number): { s
   return null;
 }
 
-function collapseWhitespace(text: string): { text: string; map: number[] } {
+function mappedRange(mapped: MappedText, start: number, length: number, sourceMap: number[]): { start: number; end: number } | null {
+  if (length <= 0) return null;
+  const end = start + length - 1;
+  const sourceStart = mapped.starts[start];
+  const sourceEnd = mapped.ends[end];
+  if (sourceStart === undefined || sourceEnd === undefined) return null;
+  return { start: sourceMap[sourceStart], end: sourceMap[sourceEnd] };
+}
+
+function buildIdentityMap(text: string): MappedText {
+  const starts: number[] = [];
+  const ends: number[] = [];
+  for (let index = 0; index < text.length; index += 1) {
+    starts.push(index);
+    ends.push(index + 1);
+  }
+  return { text, starts, ends };
+}
+
+function collapseMappedWhitespace(mapped: MappedText): MappedText {
   let out = '';
-  const map: number[] = [];
-  let i = 0;
+  const starts: number[] = [];
+  const ends: number[] = [];
   let lastWasSpace = false;
-  while (i < text.length) {
-    const ch = text[i];
+  for (let i = 0; i < mapped.text.length; i += 1) {
+    const ch = mapped.text[i];
     if (/\s/.test(ch)) {
       if (!lastWasSpace) {
         out += ' ';
-        map.push(i);
+        starts.push(mapped.starts[i]);
+        ends.push(mapped.ends[i]);
         lastWasSpace = true;
+      } else {
+        ends[ends.length - 1] = mapped.ends[i];
       }
-      i += 1;
     } else {
       out += ch;
-      map.push(i);
+      starts.push(mapped.starts[i]);
+      ends.push(mapped.ends[i]);
       lastWasSpace = false;
-      i += 1;
     }
   }
-  map.push(text.length);
-  return { text: out, map };
+  return { text: out, starts, ends };
+}
+
+function buildRenderedMarkdownMap(source: string): MappedText {
+  const text: string[] = [];
+  const starts: number[] = [];
+  const ends: number[] = [];
+
+  const append = (index: number) => {
+    text.push(source[index]);
+    starts.push(index);
+    ends.push(index + 1);
+  };
+
+  const walk = (start: number, end: number) => {
+    let index = start;
+    while (index < end) {
+      const link = parseMarkdownLink(source, index, end);
+      if (link) {
+        walk(link.labelStart, link.labelEnd);
+        index = link.end;
+        continue;
+      }
+
+      append(index);
+      index += 1;
+    }
+  };
+
+  walk(0, source.length);
+  return { text: text.join(''), starts, ends };
+}
+
+function parseMarkdownLink(source: string, start: number, limit: number): { labelStart: number; labelEnd: number; end: number } | null {
+  if (source[start] !== '[' || source[start - 1] === '!') return null;
+
+  const labelEnd = findClosingBracket(source, start + 1, limit);
+  if (labelEnd < 0) return null;
+
+  const next = labelEnd + 1;
+  if (source[next] === '(') {
+    const destinationEnd = findClosingParen(source, next + 1, limit);
+    if (destinationEnd >= 0) {
+      return { labelStart: start + 1, labelEnd, end: destinationEnd + 1 };
+    }
+  }
+
+  if (source[next] === '[') {
+    const referenceEnd = findClosingBracket(source, next + 1, limit);
+    if (referenceEnd >= 0) {
+      return { labelStart: start + 1, labelEnd, end: referenceEnd + 1 };
+    }
+  }
+
+  return null;
+}
+
+function findClosingBracket(source: string, start: number, limit: number): number {
+  let depth = 0;
+  let escaped = false;
+  for (let index = start; index < limit; index += 1) {
+    const ch = source[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch === '[') {
+      depth += 1;
+      continue;
+    }
+    if (ch === ']') {
+      if (depth === 0) return index;
+      depth -= 1;
+    }
+  }
+  return -1;
+}
+
+function findClosingParen(source: string, start: number, limit: number): number {
+  let depth = 0;
+  let escaped = false;
+  for (let index = start; index < limit; index += 1) {
+    const ch = source[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch === '(') {
+      depth += 1;
+      continue;
+    }
+    if (ch === ')') {
+      if (depth === 0) return index;
+      depth -= 1;
+    }
+  }
+  return -1;
 }
 
 function findMathMatch(body: string, selectedText: string): { start: number; end: number } | null {

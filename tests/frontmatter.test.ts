@@ -56,6 +56,20 @@ Body`;
     expect(updated).toContain('This is ==selected text==.');
   });
 
+  it('highlights markdown link text without touching the url', () => {
+    expect(highlightFirstOccurrence('Read [Example](https://example.com) now.', 'Example')).toBe('Read [==Example==](https://example.com) now.');
+  });
+
+  it('highlights selections spanning markdown links', () => {
+    expect(highlightFirstOccurrence('Read [Example](https://example.com) now.', 'Read Example now')).toBe('==Read [Example](https://example.com) now==.');
+  });
+
+  it('does not count hidden markdown link destinations as rendered occurrences', () => {
+    expect(highlightFirstOccurrence('Read [Example](https://example.com/example) and Example later.', 'Example', { occurrenceIndex: 1 })).toBe(
+      'Read [Example](https://example.com/example) and ==Example== later.'
+    );
+  });
+
   it('matches selected text across whitespace differences', () => {
     expect(highlightFirstOccurrence('alpha   beta\ngamma', 'alpha beta gamma')).toBe('==alpha   beta\ngamma==');
   });

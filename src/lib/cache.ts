@@ -46,7 +46,7 @@ function getDb(): Promise<IDBPDatabase<ReaderDb>> {
 export async function saveSummaries(articles: ArticleSummary[]): Promise<void> {
   const db = await getDb();
   const tx = db.transaction('summaries', 'readwrite');
-  await Promise.all(articles.map((article) => tx.store.put(article)));
+  await Promise.all([tx.store.clear(), ...articles.map((article) => tx.store.put(article))]);
   await tx.done;
 }
 

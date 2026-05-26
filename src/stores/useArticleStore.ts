@@ -21,6 +21,7 @@ interface ArticleStore {
   togglePriorityOnly: () => void;
   toggleStatus: (status: ReaderStatus) => void;
   toggleSource: (source: string) => void;
+  toggleTag: (tag: string) => void;
   resetFilters: (filters: ArticleFilters) => void;
   updateSummary: (article: ArticleSummary) => void;
 }
@@ -58,6 +59,13 @@ export const useArticleStore = create<ArticleStore>()(
           const sources = exists ? state.filters.sources.filter((item) => item !== source) : [...state.filters.sources, source];
           return { filters: { ...state.filters, sources } };
         }),
+      toggleTag: (tag) =>
+        set((state) => {
+          const tags = state.filters.tags ?? [];
+          const exists = tags.includes(tag);
+          const nextTags = exists ? tags.filter((item) => item !== tag) : [...tags, tag];
+          return { filters: { ...state.filters, tags: nextTags } };
+        }),
       resetFilters: (filters) => set({ filters }),
       updateSummary: (article) =>
         set((state) => ({
@@ -66,6 +74,17 @@ export const useArticleStore = create<ArticleStore>()(
     }),
     {
       name: 'reader-state',
+      merge: (persisted, current) => {
+        const persistedState = persisted as Partial<ArticleStore> | undefined;
+        return {
+          ...current,
+          ...persistedState,
+          articles: current.articles,
+          hydrated: current.hydrated,
+          filters: { ...defaultFilters, ...(persistedState?.filters ?? {}) },
+          articleScrollPositions: persistedState?.articleScrollPositions ?? current.articleScrollPositions
+        };
+      },
       partialize: (state) => ({
         filters: state.filters,
         lastArticleId: state.lastArticleId,

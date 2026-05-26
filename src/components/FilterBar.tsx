@@ -6,7 +6,7 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { collectSources } from '@/lib/filters';
+import { collectSources, collectTags } from '@/lib/filters';
 import { useArticleStore } from '@/stores/useArticleStore';
 import type { ArticleSummary, ReaderStatus } from '@/types/article';
 
@@ -19,13 +19,17 @@ const statuses: Array<{ value: ReaderStatus; label: string }> = [
 
 export function FilterBar({ articles, onRefresh, syncing }: { articles: ArticleSummary[]; onRefresh: () => void; syncing: boolean }): React.ReactElement {
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [tagsOpen, setTagsOpen] = useState(false);
   const filters = useArticleStore((state) => state.filters);
   const setSortMode = useArticleStore((state) => state.setSortMode);
   const setQuery = useArticleStore((state) => state.setQuery);
   const togglePriorityOnly = useArticleStore((state) => state.togglePriorityOnly);
   const toggleStatus = useArticleStore((state) => state.toggleStatus);
   const toggleSource = useArticleStore((state) => state.toggleSource);
+  const toggleTag = useArticleStore((state) => state.toggleTag);
   const sources = collectSources(articles);
+  const tags = collectTags(articles);
+  const selectedTags = filters.tags ?? [];
 
   return (
     <div className="reader-surface-bar sticky top-0 z-20 border-b px-3 py-3 text-[var(--foreground)]">
@@ -70,6 +74,9 @@ export function FilterBar({ articles, onRefresh, syncing }: { articles: ArticleS
           <Button type="button" size="sm" variant={filters.sources.length > 0 ? 'default' : 'secondary'} onClick={() => setSourcesOpen(true)}>
             Sources{filters.sources.length > 0 ? ` (${filters.sources.length})` : ''}
           </Button>
+          <Button type="button" size="sm" variant={selectedTags.length > 0 ? 'default' : 'secondary'} onClick={() => setTagsOpen(true)}>
+            Tags{selectedTags.length > 0 ? ` (${selectedTags.length})` : ''}
+          </Button>
         </div>
       </div>
       {sourcesOpen ? (
@@ -91,6 +98,31 @@ export function FilterBar({ articles, onRefresh, syncing }: { articles: ArticleS
                 <label key={source} className="flex min-h-11 items-center gap-3 rounded px-3 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900">
                   <input type="checkbox" checked={filters.sources.includes(source)} onChange={() => toggleSource(source)} />
                   <span className="min-w-0 flex-1 truncate">{source}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {tagsOpen ? (
+        <div className="fixed inset-0 z-50 bg-black/30 px-3 py-20 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Tag filter">
+          <button type="button" className="absolute inset-0 cursor-default" aria-label="Close tag filter" onClick={() => setTagsOpen(false)} />
+          <div className="relative mx-auto flex max-h-[min(70vh,520px)] max-w-[560px] flex-col rounded-md border border-neutral-300 bg-white text-neutral-950 shadow-2xl dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50">
+            <div className="flex items-center justify-between gap-3 border-b border-neutral-300 px-4 py-3 dark:border-neutral-800">
+              <div>
+                <h2 className="text-sm font-semibold">Tags</h2>
+                <p className="text-xs text-neutral-600 dark:text-neutral-400">{tags.length} available</p>
+              </div>
+              <Button type="button" size="icon" variant="ghost" onClick={() => setTagsOpen(false)} aria-label="Close">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="overflow-y-auto p-2">
+              {tags.length === 0 ? <p className="px-3 py-8 text-center text-sm text-neutral-600 dark:text-neutral-400">No tags</p> : null}
+              {tags.map((tag) => (
+                <label key={tag} className="flex min-h-11 items-center gap-3 rounded px-3 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900">
+                  <input type="checkbox" checked={selectedTags.includes(tag)} onChange={() => toggleTag(tag)} />
+                  <span className="min-w-0 flex-1 truncate">{tag}</span>
                 </label>
               ))}
             </div>

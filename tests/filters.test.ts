@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { collectSources, filterAndSortArticles, nextUnratedAfter } from '@/lib/filters';
+import { collectSources, collectTags, filterAndSortArticles, nextUnratedAfter } from '@/lib/filters';
 import type { ArticleSummary } from '@/types/article';
 
 const articles: ArticleSummary[] = [
@@ -48,23 +48,31 @@ const articles: ArticleSummary[] = [
 
 describe('filters', () => {
   it('filters by default unrated status', () => {
-    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated'], sources: [], query: '', priorityOnly: false }).map((article) => article.id)).toEqual(['c', 'a']);
+    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated'], sources: [], tags: [], query: '', priorityOnly: false }).map((article) => article.id)).toEqual(['c', 'a']);
   });
 
   it('sorts by score', () => {
-    expect(filterAndSortArticles(articles, { sortMode: 'score', statuses: ['unrated', 'relevant'], sources: [], query: '', priorityOnly: false }).map((article) => article.id)).toEqual(['c', 'b', 'a']);
+    expect(filterAndSortArticles(articles, { sortMode: 'score', statuses: ['unrated', 'relevant'], sources: [], tags: [], query: '', priorityOnly: false }).map((article) => article.id)).toEqual(['c', 'b', 'a']);
   });
 
   it('filters with fuzzy search', () => {
-    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], query: 'algebra', priorityOnly: false }).map((article) => article.id)).toEqual(['a']);
+    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], tags: [], query: 'algebra', priorityOnly: false }).map((article) => article.id)).toEqual(['a']);
   });
 
   it('collects sources', () => {
     expect(collectSources(articles)).toEqual(['arXiv', 'Blog', 'OpenClaw']);
   });
 
+  it('filters by tags', () => {
+    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], tags: ['ai'], query: '', priorityOnly: false }).map((article) => article.id)).toEqual(['b']);
+  });
+
+  it('collects tags', () => {
+    expect(collectTags(articles)).toEqual(['ai', 'capture', 'math']);
+  });
+
   it('can show only prioritized articles', () => {
-    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], query: '', priorityOnly: true }).map((article) => article.id)).toEqual(['c']);
+    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], tags: [], query: '', priorityOnly: true }).map((article) => article.id)).toEqual(['c']);
   });
 
   it('finds next unrated article', () => {
@@ -75,7 +83,7 @@ describe('filters', () => {
     expect(
       filterAndSortArticles(
         articles,
-        { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], query: '', priorityOnly: false },
+        { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], tags: [], query: '', priorityOnly: false },
         { pinPriorityOnTop: false }
       ).map((article) => article.id)
     ).toEqual(['b', 'a', 'c']);
@@ -83,7 +91,7 @@ describe('filters', () => {
 
   it('pins priority by default even when sorted by newest', () => {
     expect(
-      filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], query: '', priorityOnly: false }).map(
+      filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], tags: [], query: '', priorityOnly: false }).map(
         (article) => article.id
       )
     ).toEqual(['c', 'b', 'a']);

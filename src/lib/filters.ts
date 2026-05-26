@@ -8,6 +8,7 @@ export const defaultFilters: ArticleFilters = {
   sortMode: 'newest',
   statuses: defaultStatuses,
   sources: [],
+  tags: [],
   query: '',
   priorityOnly: false
 };
@@ -19,12 +20,14 @@ export interface SortPreferences {
 export function filterAndSortArticles(articles: ArticleSummary[], filters: ArticleFilters, prefs: SortPreferences = {}): ArticleSummary[] {
   const activeStatuses = filters.statuses.length > 0 ? filters.statuses : defaultStatuses;
   const activeSources = new Set(filters.sources);
+  const activeTags = new Set(filters.tags ?? []);
   const pinPriority = prefs.pinPriorityOnTop ?? true;
 
   let result = articles.filter((article) => {
     const status = article.frontmatter.reader_status ?? 'unrated';
     if (!activeStatuses.includes(status)) return false;
     if (activeSources.size > 0 && !activeSources.has(article.frontmatter.source ?? '')) return false;
+    if (activeTags.size > 0 && !(article.frontmatter.tags ?? []).some((tag) => activeTags.has(tag))) return false;
     if (filters.priorityOnly && priorityValue(article) <= 0) return false;
     return true;
   });
@@ -56,6 +59,12 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
 
 export function collectSources(articles: ArticleSummary[]): string[] {
   return Array.from(new Set(articles.map((article) => article.frontmatter.source).filter((source): source is string => Boolean(source)))).sort((a, b) =>
+    a.localeCompare(b, 'de')
+  );
+}
+
+export function collectTags(articles: ArticleSummary[]): string[] {
+  return Array.from(new Set(articles.flatMap((article) => article.frontmatter.tags ?? []).filter((tag) => tag.trim().length > 0))).sort((a, b) =>
     a.localeCompare(b, 'de')
   );
 }

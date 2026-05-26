@@ -42,6 +42,7 @@ export interface ArticleFilters {
   sortMode: ArticleSortMode;
   statuses: ReaderStatus[];
   sources: string[];
+  tags: string[];
   query: string;
   priorityOnly: boolean;
 }

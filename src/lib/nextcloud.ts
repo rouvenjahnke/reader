@@ -120,7 +120,7 @@ export async function listArticleSummaries(basePath = getBasePath()): Promise<Ar
     }
   });
 
-  return summaries.filter((summary): summary is ArticleSummary => summary !== null);
+  return uniqueSummaries(summaries.filter((summary): summary is ArticleSummary => summary !== null));
 }
 
 export async function getArticle(path: string): Promise<Article> {
@@ -180,4 +180,13 @@ export async function testConnection(basePath = getBasePath()): Promise<{ ok: tr
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'unknown error';
+}
+
+function uniqueSummaries(summaries: ArticleSummary[]): ArticleSummary[] {
+  const seen = new Set<string>();
+  return summaries.filter((summary) => {
+    if (seen.has(summary.id)) return false;
+    seen.add(summary.id);
+    return true;
+  });
 }

@@ -99,8 +99,10 @@ export function isGalois(article: ArticleSummary): boolean {
   return normalizeSourceName(article.frontmatter.source) === PRIORITY_SOURCE;
 }
 
-function normalizeSourceName(value: string | undefined): string {
-  return (value ?? '').trim().toLowerCase();
+function normalizeSourceName(value: unknown): string {
+  if (typeof value === 'string') return value.trim().toLowerCase();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value).toLowerCase();
+  return '';
 }
 
 function isNewSince(article: ArticleSummary, cutoffMs: number): boolean {
@@ -204,11 +206,22 @@ function ratingWeight(status: ReaderStatus | undefined): number {
 
 function dedupKey(article: ArticleSummary): string | null {
   const fm = article.frontmatter;
-  if (fm.arxiv_id && fm.arxiv_id.trim()) return `arxiv:${normalizeArxiv(fm.arxiv_id)}`;
-  if (fm.url && fm.url.trim()) return `url:${normalizeUrl(fm.url)}`;
-  const titleKey = normalizeTitle(fm.title);
+  const arxiv = asNonEmptyString(fm.arxiv_id);
+  if (arxiv) return `arxiv:${normalizeArxiv(arxiv)}`;
+  const url = asNonEmptyString(fm.url);
+  if (url) return `url:${normalizeUrl(url)}`;
+  const titleKey = normalizeTitle(asNonEmptyString(fm.title) ?? '');
   const sourceKey = normalizeSourceName(fm.source);
   if (titleKey.length >= 8) return `title:${sourceKey}|${titleKey}`;
+  return null;
+}
+
+function asNonEmptyString(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   return null;
 }
 

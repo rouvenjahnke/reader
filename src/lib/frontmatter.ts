@@ -10,6 +10,12 @@ export function parseArticle(raw: string): { frontmatter: ArticleFrontmatter; bo
     frontmatter: {
       ...data,
       title: typeof data.title === 'string' && data.title.trim() ? data.title : 'Ohne Titel',
+      url: normalizeString(data.url),
+      source: normalizeString(data.source),
+      author: normalizeString(data.author),
+      arxiv_id: normalizeString(data.arxiv_id),
+      published: normalizeString(data.published),
+      fetched: normalizeString(data.fetched),
       tags: normalizeTags(data.tags),
       score: normalizeNumber(data.score),
       priority: normalizeNumber(data.priority),
@@ -19,6 +25,16 @@ export function parseArticle(raw: string): { frontmatter: ArticleFrontmatter; bo
     },
     body: parsed.content
   };
+}
+
+function normalizeString(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (value instanceof Date) return value.toISOString();
+  return undefined;
 }
 
 export function setRating(raw: string, status: Exclude<ReaderStatus, 'unrated'>, ratedAt = new Date()): string {

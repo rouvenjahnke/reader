@@ -29,6 +29,10 @@ export interface ArticleSummary {
   lastModified?: string;
   size?: number;
   frontmatter: ArticleFrontmatter;
+  /** Client-side: ISO timestamp when this id was first observed on this device. */
+  firstSeenAt?: string;
+  /** Sibling summaries that were collapsed into this one by dedup. Winner only. */
+  duplicates?: ArticleSummary[];
 }
 
 export interface Article extends ArticleSummary {
@@ -44,7 +48,12 @@ export interface ArticleFilters {
   sources: string[];
   tags: string[];
   query: string;
-  priorityOnly: boolean;
+  /** Show only Galois-source articles. */
+  galoisOnly: boolean;
+  /** Show only articles first observed within the last 24 hours. */
+  newTodayOnly: boolean;
+  /** When false, articles collapsed as duplicates are hidden from the list. */
+  showDuplicates: boolean;
 }
 
 export interface PendingRating {

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, ChevronLeft, ChevronRight, Eraser, ExternalLink, Highlighter } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Eraser, ExternalLink, Highlighter, Keyboard } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -10,7 +10,7 @@ import { SwipeContainer } from '@/components/SwipeContainer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { flushPendingQueues } from '@/lib/cache';
-import { filterAndSortArticles, nextUnratedAfter, priorityValue } from '@/lib/filters';
+import { estimateReadingMinutes, filterAndSortArticles, nextUnratedAfter, priorityValue } from '@/lib/filters';
 import { highlightFirstOccurrence, removeHighlightInBody } from '@/lib/frontmatter';
 import { queueHighlight, queueRating, saveArticle, updateCachedBody, updateCachedRating } from '@/lib/cache';
 import { appendSyncLog } from '@/lib/syncLog';
@@ -37,11 +37,15 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const updateSummary = useArticleStore((state) => state.updateSummary);
   const setLastArticleId = useArticleStore((state) => state.setLastArticleId);
   const setArticleScrollPosition = useArticleStore((state) => state.setArticleScrollPosition);
-  const pinPriorityOnTop = usePreferencesStore((state) => state.pinPriorityOnTop);
+  const pinGaloisOnTop = usePreferencesStore((state) => state.pinGaloisOnTop);
   const fontSize = usePreferencesStore((state) => state.fontSize);
+  const showReadingProgress = usePreferencesStore((state) => state.showReadingProgress);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const readingMinutes = useMemo(() => estimateReadingMinutes(article.body), [article.body]);
   const ordered = useMemo(
-    () => filterAndSortArticles(articles, filters, { pinPriorityOnTop }),
-    [articles, filters, pinPriorityOnTop]
+    () => filterAndSortArticles(articles, filters, { pinGaloisOnTop }),
+    [articles, filters, pinGaloisOnTop]
   );
   const currentIndex = ordered.findIndex((item) => item.id === article.id);
   const previous = currentIndex > 0 ? ordered[currentIndex - 1] : undefined;
@@ -202,6 +206,9 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
 
     const onScroll = () => {
       scrollSaveRef.current.pendingY = window.scrollY;
+      const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+      const ratio = Math.max(0, Math.min(1, window.scrollY / max));
+      setScrollProgress(ratio);
       if (scrollSaveRef.current.timer !== null) return;
       scrollSaveRef.current.timer = window.setTimeout(persist, 400);
     };
@@ -247,6 +254,16 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLElement && (event.target.isContentEditable || ['INPUT', 'TEXTAREA'].includes(event.target.tagName))) return;
+      if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
+        event.preventDefault();
+        setShowShortcuts((value) => !value);
+        return;
+      }
+      if (event.key === 'Escape' && showShortcuts) {
+        setShowShortcuts(false);
+        return;
+      }
       if (event.key === 'ArrowLeft') goTo(previous?.id);
       if (event.key === 'ArrowRight') goTo(next?.id);
       if (event.key === '1') void handleRate('irrelevant');
@@ -257,7 +274,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [goTo, handleRate, next?.id, previous?.id, router]);
+  }, [goTo, handleRate, next?.id, previous?.id, router, showShortcuts]);
 
   return (
     <div className="min-h-screen pb-28">
@@ -272,9 +289,18 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
                 {article.frontmatter.title}
               </h1>
               <p className="truncate text-xs text-neutral-700 dark:text-neutral-400">
-                {[article.frontmatter.source, typeof article.frontmatter.score === 'number' ? `Score ${article.frontmatter.score.toFixed(1)}` : undefined].filter(Boolean).join(' · ')}
+                {[
+                  article.frontmatter.source,
+                  typeof article.frontmatter.score === 'number' ? `Score ${article.frontmatter.score.toFixed(1)}` : undefined,
+                  readingMinutes > 0 ? `${readingMinutes} min read` : undefined
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </p>
             </div>
+            <Button type="button" size="icon" variant="ghost" onClick={() => setShowShortcuts(true)} aria-label="Keyboard shortcuts" className="hidden sm:inline-flex">
+              <Keyboard className="h-4 w-4" />
+            </Button>
             <Button type="button" size="icon" variant="secondary" onClick={() => goTo(previous?.id)} disabled={!previous} aria-label="Previous article">
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -282,6 +308,14 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
+          {showReadingProgress ? (
+            <div className="mt-2 h-0.5 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800" aria-hidden="true">
+              <div
+                className="h-full bg-teal-500 transition-[width] duration-150"
+                style={{ width: `${Math.round(scrollProgress * 100)}%` }}
+              />
+            </div>
+          ) : null}
           {tags.length > 0 || priority > 0 ? (
             <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1 pl-[3.25rem]">
               {priority > 0 ? (
@@ -381,6 +415,43 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
       </main>
 
       <RatingActionBar currentStatus={article.frontmatter.reader_status} onRate={handleRate} disabled={busy} />
+
+      {showShortcuts ? <ShortcutsOverlay onClose={() => setShowShortcuts(false)} /> : null}
+    </div>
+  );
+}
+
+function ShortcutsOverlay({ onClose }: { onClose: () => void }): React.ReactElement {
+  const rows: Array<{ keys: string; label: string }> = [
+    { keys: '←  →', label: 'Previous / next article' },
+    { keys: '1', label: 'Rate irrelevant' },
+    { keys: '2', label: 'Rate relevant' },
+    { keys: '3', label: 'Rate high relevant' },
+    { keys: 'Esc', label: 'Back to list' },
+    { keys: '?', label: 'Open this overlay' }
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+      <button type="button" className="absolute inset-0 cursor-default" aria-label="Close" onClick={onClose} />
+      <div className="relative w-full max-w-md rounded-md border border-neutral-300 bg-white p-5 text-neutral-950 shadow-2xl dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50">
+        <div className="mb-3 flex items-center gap-2">
+          <Keyboard className="h-4 w-4" />
+          <h2 className="text-sm font-semibold">Keyboard shortcuts</h2>
+        </div>
+        <ul className="space-y-2 text-sm">
+          {rows.map((row) => (
+            <li key={row.keys} className="flex items-center justify-between gap-3">
+              <span className="text-neutral-700 dark:text-neutral-300">{row.label}</span>
+              <kbd className="rounded border border-neutral-300 bg-neutral-100 px-2 py-0.5 font-mono text-xs text-neutral-800 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+                {row.keys}
+              </kbd>
+            </li>
+          ))}
+        </ul>
+        <Button type="button" variant="secondary" className="mt-5 w-full" onClick={onClose}>
+          Close
+        </Button>
+      </div>
     </div>
   );
 }

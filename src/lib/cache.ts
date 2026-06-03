@@ -5,6 +5,11 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { appendSyncLog } from '@/lib/syncLog';
 import type { Article, ArticleSummary, PendingHighlight, PendingRating } from '@/types/article';
 
+interface ArticleMeta {
+  id: string;
+  firstSeenAt: string;
+}
+
 interface ReaderDb extends DBSchema {
   articles: {
     key: string;
@@ -23,19 +28,28 @@ interface ReaderDb extends DBSchema {
     key: string;
     value: PendingHighlight;
   };
+  article_meta: {
+    key: string;
+    value: ArticleMeta;
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<ReaderDb>> | null = null;
 
 function getDb(): Promise<IDBPDatabase<ReaderDb>> {
   if (!dbPromise) {
-    dbPromise = openDB<ReaderDb>('reader-db', 1, {
-      upgrade(db) {
-        const articles = db.createObjectStore('articles', { keyPath: 'id' });
-        articles.createIndex('by-path', 'path');
-        db.createObjectStore('summaries', { keyPath: 'id' });
-        db.createObjectStore('pending_ratings', { keyPath: 'id' });
-        db.createObjectStore('pending_highlights', { keyPath: 'id' });
+    dbPromise = openDB<ReaderDb>('reader-db', 2, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const articles = db.createObjectStore('articles', { keyPath: 'id' });
+          articles.createIndex('by-path', 'path');
+          db.createObjectStore('summaries', { keyPath: 'id' });
+          db.createObjectStore('pending_ratings', { keyPath: 'id' });
+          db.createObjectStore('pending_highlights', { keyPath: 'id' });
+        }
+        if (oldVersion < 2) {
+          db.createObjectStore('article_meta', { keyPath: 'id' });
+        }
       }
     });
   }
@@ -43,16 +57,55 @@ function getDb(): Promise<IDBPDatabase<ReaderDb>> {
   return dbPromise;
 }
 
-export async function saveSummaries(articles: ArticleSummary[]): Promise<void> {
+/**
+ * Persist the latest summary set. For every summary previously unseen on this
+ * device, stamp `firstSeenAt = now`. For known summaries, reattach the prior
+ * firstSeenAt so the "new since…" signal stays stable across syncs.
+ */
+export async function saveSummaries(articles: ArticleSummary[]): Promise<{ newIds: string[] }> {
   const db = await getDb();
+
+  if (articles.length === 0) {
+    const tx = db.transaction('summaries', 'readwrite');
+    await tx.store.clear();
+    await tx.done;
+    return { newIds: [] };
+  }
+
+  const now = new Date().toISOString();
+  const newIds: string[] = [];
+
+  const metaTx = db.transaction('article_meta', 'readwrite');
+  const existing = new Map<string, ArticleMeta>();
+  for (const meta of await metaTx.store.getAll()) existing.set(meta.id, meta);
+
+  const enriched: ArticleSummary[] = [];
+  for (const summary of articles) {
+    const prior = existing.get(summary.id);
+    if (!prior) {
+      const meta: ArticleMeta = { id: summary.id, firstSeenAt: now };
+      await metaTx.store.put(meta);
+      enriched.push({ ...summary, firstSeenAt: now });
+      newIds.push(summary.id);
+    } else {
+      enriched.push({ ...summary, firstSeenAt: prior.firstSeenAt });
+    }
+  }
+  await metaTx.done;
+
   const tx = db.transaction('summaries', 'readwrite');
-  await Promise.all([tx.store.clear(), ...articles.map((article) => tx.store.put(article))]);
+  await tx.store.clear();
+  for (const summary of enriched) await tx.store.put(summary);
   await tx.done;
+
+  return { newIds };
 }
 
 export async function getCachedSummaries(): Promise<ArticleSummary[]> {
   const db = await getDb();
-  return db.getAll('summaries');
+  const [summaries, metas] = await Promise.all([db.getAll('summaries'), db.getAll('article_meta')]);
+  const metaById = new Map(metas.map((meta) => [meta.id, meta.firstSeenAt] as const));
+  return summaries.map((summary) => ({ ...summary, firstSeenAt: summary.firstSeenAt ?? metaById.get(summary.id) }));
 }
 
 export async function saveArticle(article: Article): Promise<void> {
@@ -65,6 +118,31 @@ export async function saveArticle(article: Article): Promise<void> {
 export async function getCachedArticle(id: string): Promise<Article | undefined> {
   const db = await getDb();
   return db.get('articles', id);
+}
+
+/** All locally cached article ids — used by prefetch to skip what's already there. */
+export async function listCachedArticleIds(): Promise<Set<string>> {
+  const db = await getDb();
+  const keys = await db.getAllKeys('articles');
+  return new Set(keys.map((key) => String(key)));
+}
+
+/** Cached etags so prefetch can decide whether a remote re-fetch is needed. */
+export async function getCachedArticleEtags(): Promise<Map<string, string>> {
+  const db = await getDb();
+  const articles = await db.getAll('articles');
+  const map = new Map<string, string>();
+  for (const article of articles) {
+    if (article.etag) map.set(article.id, article.etag);
+  }
+  return map;
+}
+
+/** Streaming body iterator for full-text search across the local cache. */
+export async function getAllCachedBodies(): Promise<Array<{ id: string; body: string }>> {
+  const db = await getDb();
+  const articles = await db.getAll('articles');
+  return articles.map((article) => ({ id: article.id, body: article.body }));
 }
 
 export async function updateCachedRating(id: string, status: PendingRating['status'], ratedAt: string): Promise<void> {
@@ -103,6 +181,12 @@ export async function queueRating(rating: PendingRating): Promise<void> {
 export async function queueHighlight(highlight: PendingHighlight): Promise<void> {
   const db = await getDb();
   await db.put('pending_highlights', highlight);
+}
+
+export async function pendingQueueDepth(): Promise<{ ratings: number; highlights: number }> {
+  const db = await getDb();
+  const [ratings, highlights] = await Promise.all([db.count('pending_ratings'), db.count('pending_highlights')]);
+  return { ratings, highlights };
 }
 
 export async function flushPendingQueues(): Promise<void> {
@@ -164,6 +248,7 @@ function stripBody(article: Article): ArticleSummary {
     etag: article.etag,
     lastModified: article.lastModified,
     size: article.size,
-    frontmatter: article.frontmatter
+    frontmatter: article.frontmatter,
+    firstSeenAt: article.firstSeenAt
   };
 }

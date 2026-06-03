@@ -1,12 +1,12 @@
 'use client';
 
-import { RefreshCw, Search, Settings, X } from 'lucide-react';
+import { Clock, Layers, RefreshCw, Search, Settings, Sparkles, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { collectSources, collectTags } from '@/lib/filters';
+import { collectSources, collectTags, isGalois, PRIORITY_SOURCE } from '@/lib/filters';
 import { useArticleStore } from '@/stores/useArticleStore';
 import type { ArticleSummary, ReaderStatus } from '@/types/article';
 
@@ -17,19 +17,38 @@ const statuses: Array<{ value: ReaderStatus; label: string }> = [
   { value: 'irrelevant', label: 'Irrelevant' }
 ];
 
-export function FilterBar({ articles, onRefresh, syncing }: { articles: ArticleSummary[]; onRefresh: () => void; syncing: boolean }): React.ReactElement {
+export interface FilterBarMeta {
+  syncing: boolean;
+  offline: boolean;
+  lastSyncAt?: string;
+  duplicateCount: number;
+  prefetch?: { done: number; total: number };
+  sessionNewCount: number;
+  pendingCount: number;
+}
+
+interface Props {
+  articles: ArticleSummary[];
+  onRefresh: () => void;
+  meta: FilterBarMeta;
+}
+
+export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElement {
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
   const filters = useArticleStore((state) => state.filters);
   const setSortMode = useArticleStore((state) => state.setSortMode);
   const setQuery = useArticleStore((state) => state.setQuery);
-  const togglePriorityOnly = useArticleStore((state) => state.togglePriorityOnly);
+  const toggleGaloisOnly = useArticleStore((state) => state.toggleGaloisOnly);
+  const toggleNewTodayOnly = useArticleStore((state) => state.toggleNewTodayOnly);
+  const toggleShowDuplicates = useArticleStore((state) => state.toggleShowDuplicates);
   const toggleStatus = useArticleStore((state) => state.toggleStatus);
   const toggleSource = useArticleStore((state) => state.toggleSource);
   const toggleTag = useArticleStore((state) => state.toggleTag);
   const sources = collectSources(articles);
   const tags = collectTags(articles);
   const selectedTags = filters.tags ?? [];
+  const hasGalois = articles.some(isGalois);
 
   return (
     <div className="reader-surface-bar sticky top-0 z-20 border-b px-3 py-3 text-[var(--foreground)]">
@@ -37,10 +56,10 @@ export function FilterBar({ articles, onRefresh, syncing }: { articles: ArticleS
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500 dark:text-neutral-400" />
-            <Input className="pl-9" placeholder="Search" value={filters.query} onChange={(event) => setQuery(event.target.value)} />
+            <Input className="pl-9" placeholder="Search title, body, tag" value={filters.query} onChange={(event) => setQuery(event.target.value)} />
           </div>
-          <Button type="button" size="icon" variant="secondary" onClick={onRefresh} disabled={syncing} aria-label="Sync">
-            <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+          <Button type="button" size="icon" variant="secondary" onClick={onRefresh} disabled={meta.syncing} aria-label="Sync">
+            <RefreshCw className={`h-4 w-4 ${meta.syncing ? 'animate-spin' : ''}`} />
           </Button>
           <Link
             href="/settings"
@@ -50,6 +69,9 @@ export function FilterBar({ articles, onRefresh, syncing }: { articles: ArticleS
             <Settings className="h-4 w-4" />
           </Link>
         </div>
+
+        <SyncStatusLine meta={meta} />
+
         <div className="flex gap-2 overflow-x-auto pb-1">
           <Button type="button" size="sm" variant={filters.sortMode === 'newest' ? 'default' : 'secondary'} onClick={() => setSortMode('newest')}>
             Newest
@@ -57,9 +79,28 @@ export function FilterBar({ articles, onRefresh, syncing }: { articles: ArticleS
           <Button type="button" size="sm" variant={filters.sortMode === 'score' ? 'default' : 'secondary'} onClick={() => setSortMode('score')}>
             Score
           </Button>
-          <Button type="button" size="sm" variant={filters.priorityOnly ? 'default' : 'secondary'} onClick={togglePriorityOnly}>
-            Priority
+          <Button
+            type="button"
+            size="sm"
+            variant={filters.newTodayOnly ? 'default' : 'secondary'}
+            onClick={toggleNewTodayOnly}
+            aria-pressed={filters.newTodayOnly}
+            title="Only articles first observed in the last 24 hours"
+          >
+            <Sparkles className="h-3.5 w-3.5" /> Today{meta.sessionNewCount > 0 ? ` · ${meta.sessionNewCount}` : ''}
           </Button>
+          {hasGalois ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={filters.galoisOnly ? 'default' : 'secondary'}
+              onClick={toggleGaloisOnly}
+              aria-pressed={filters.galoisOnly}
+              title={`Only ${PRIORITY_SOURCE} articles`}
+            >
+              Galois
+            </Button>
+          ) : null}
           {statuses.map((status) => (
             <Button
               key={status.value}
@@ -77,6 +118,17 @@ export function FilterBar({ articles, onRefresh, syncing }: { articles: ArticleS
           <Button type="button" size="sm" variant={selectedTags.length > 0 ? 'default' : 'secondary'} onClick={() => setTagsOpen(true)}>
             Tags{selectedTags.length > 0 ? ` (${selectedTags.length})` : ''}
           </Button>
+          {meta.duplicateCount > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={filters.showDuplicates ? 'default' : 'secondary'}
+              onClick={toggleShowDuplicates}
+              title="Show duplicate articles inline"
+            >
+              <Layers className="h-3.5 w-3.5" /> Duplicates · {meta.duplicateCount}
+            </Button>
+          ) : null}
         </div>
       </div>
       {sourcesOpen ? (
@@ -131,4 +183,35 @@ export function FilterBar({ articles, onRefresh, syncing }: { articles: ArticleS
       ) : null}
     </div>
   );
+}
+
+function SyncStatusLine({ meta }: { meta: FilterBarMeta }): React.ReactElement | null {
+  const items: string[] = [];
+
+  if (meta.offline) items.push('Offline');
+  if (meta.prefetch && meta.prefetch.total > 0 && meta.prefetch.done < meta.prefetch.total) {
+    items.push(`Prefetch ${meta.prefetch.done}/${meta.prefetch.total}`);
+  } else if (meta.lastSyncAt) {
+    items.push(`Synced ${formatRelative(meta.lastSyncAt)}`);
+  }
+  if (meta.pendingCount > 0) items.push(`${meta.pendingCount} pending`);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+      <Clock className="h-3 w-3 shrink-0" />
+      <span className="truncate">{items.join(' · ')}</span>
+    </div>
+  );
+}
+
+function formatRelative(iso: string): string {
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return iso;
+  const secs = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (secs < 60) return `${secs}s ago`;
+  if (secs < 3600) return `${Math.round(secs / 60)} min ago`;
+  if (secs < 86_400) return `${Math.round(secs / 3600)} h ago`;
+  return new Date(ts).toLocaleString();
 }

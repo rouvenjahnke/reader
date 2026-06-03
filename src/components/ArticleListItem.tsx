@@ -1,16 +1,23 @@
 'use client';
 
 import Link from 'next/link';
-import { Star } from 'lucide-react';
+import { Layers, Sparkles, Star } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { priorityValue } from '@/lib/filters';
 import type { ArticleSummary, ReaderStatus } from '@/types/article';
 
-export function ArticleListItem({ article, style }: { article: ArticleSummary; style?: React.CSSProperties }): React.ReactElement {
+interface Props {
+  article: ArticleSummary;
+  isNew?: boolean;
+  style?: React.CSSProperties;
+}
+
+export function ArticleListItem({ article, isNew, style }: Props): React.ReactElement {
   const fm = article.frontmatter;
   const status = fm.reader_status ?? 'unrated';
   const priority = priorityValue(article);
+  const duplicateCount = article.duplicates?.length ?? 0;
 
   return (
     <div style={style} className="px-3 py-2">
@@ -29,7 +36,22 @@ export function ArticleListItem({ article, style }: { article: ArticleSummary; s
           {[fm.source, fm.author, relativeDate(fm.published ?? fm.fetched ?? article.lastModified)].filter(Boolean).join(' · ')}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {priority > 0 ? <Badge className="border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">Priority {priority}</Badge> : null}
+          {isNew ? (
+            <Badge className="border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+              <Sparkles className="mr-1 h-3 w-3" /> New
+            </Badge>
+          ) : null}
+          {priority > 0 ? (
+            <Badge className="border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">Priority {priority}</Badge>
+          ) : null}
+          {duplicateCount > 0 ? (
+            <Badge
+              className="border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200"
+              title={article.duplicates?.map((dup) => dup.path).join('\n')}
+            >
+              <Layers className="mr-1 h-3 w-3" /> +{duplicateCount} duplicate{duplicateCount > 1 ? 's' : ''}
+            </Badge>
+          ) : null}
           {fm.tags?.slice(0, 3).map((tag) => (
             <Badge key={tag}>{tag}</Badge>
           ))}

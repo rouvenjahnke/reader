@@ -6,9 +6,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { FixedSizeList, type ListChildComponentProps } from 'react-window';
 
 import { ArticleListItem } from '@/components/ArticleListItem';
-import { FilterBar } from '@/components/FilterBar';
-import { flushPendingQueues } from '@/lib/cache';
-import { filterAndSortArticles } from '@/lib/filters';
+import { FilterBar, type FilterBarMeta } from '@/components/FilterBar';
+import { flushPendingQueues, getAllCachedBodies, pendingQueueDepth } from '@/lib/cache';
+import { dedupeArticles, filterAndSortArticles } from '@/lib/filters';
+import { prefetchArticleBodies, type PrefetchProgress } from '@/lib/prefetch';
 import { fetchArticleSummaries, loadCachedSummaries } from '@/lib/sync';
 import { useArticleStore } from '@/stores/useArticleStore';
 import { usePreferencesStore } from '@/stores/usePreferencesStore';
@@ -18,39 +19,76 @@ export default function HomePage(): React.ReactElement {
   const articles = useArticleStore((state) => state.articles);
   const filters = useArticleStore((state) => state.filters);
   const hydrated = useArticleStore((state) => state.hydrated);
+  const sessionNewIds = useArticleStore((state) => state.sessionNewIds);
   const setArticles = useArticleStore((state) => state.setArticles);
   const hydrateArticles = useArticleStore((state) => state.hydrateArticles);
+  const noteSessionNew = useArticleStore((state) => state.noteSessionNew);
   const lastArticleId = useArticleStore((state) => state.lastArticleId);
-  const pinPriorityOnTop = usePreferencesStore((state) => state.pinPriorityOnTop);
+  const pinGaloisOnTop = usePreferencesStore((state) => state.pinGaloisOnTop);
   const autoSyncOnOpen = usePreferencesStore((state) => state.autoSyncOnOpen);
+  const bodyPrefetch = usePreferencesStore((state) => state.bodyPrefetch);
   const syncIntervalMinutes = usePreferencesStore((state) => state.syncIntervalMinutes);
   const showContinueReading = usePreferencesStore((state) => state.showContinueReading);
   const [syncing, setSyncing] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [offline, setOffline] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<string | undefined>(undefined);
+  const [prefetch, setPrefetch] = useState<{ done: number; total: number } | undefined>(undefined);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [bodyMatches, setBodyMatches] = useState<Set<string>>(new Set());
   const [height, setHeight] = useState(720);
+  const prefetchRef = useRef<{ cancel: () => void } | null>(null);
   const lastRefreshRef = useRef<number>(0);
 
-  const filtered = useMemo(
-    () => filterAndSortArticles(articles, filters, { pinPriorityOnTop }),
-    [articles, filters, pinPriorityOnTop]
+  const sessionNewSet = useMemo(() => new Set(sessionNewIds), [sessionNewIds]);
+
+  const dedup = useMemo(() => dedupeArticles(articles, { showDuplicates: filters.showDuplicates }), [articles, filters.showDuplicates]);
+
+  const filteredSummaries = useMemo(
+    () => filterAndSortArticles(dedup.visible, filters, { pinGaloisOnTop }),
+    [dedup.visible, filters, pinGaloisOnTop]
   );
+
+  // If the query matches body content but no frontmatter hit, inject those entries.
+  const filtered = useMemo<ArticleSummary[]>(() => {
+    const query = filters.query.trim();
+    if (!query || bodyMatches.size === 0) return filteredSummaries;
+    const present = new Set(filteredSummaries.map((article) => article.id));
+    const extras = dedup.visible.filter((article) => bodyMatches.has(article.id) && !present.has(article.id));
+    if (extras.length === 0) return filteredSummaries;
+    return [...filteredSummaries, ...extras];
+  }, [filteredSummaries, dedup.visible, bodyMatches, filters.query]);
+
   const lastArticle = useMemo(() => articles.find((article) => article.id === lastArticleId), [articles, lastArticleId]);
+
+  const refreshPending = async () => {
+    const depth = await pendingQueueDepth().catch(() => ({ ratings: 0, highlights: 0 }));
+    setPendingCount(depth.ratings + depth.highlights);
+  };
+
+  const startPrefetch = (summaries: ArticleSummary[]) => {
+    if (!bodyPrefetch || !navigator.onLine || summaries.length === 0) return;
+    prefetchRef.current?.cancel();
+    const handle = prefetchArticleBodies(summaries, {
+      concurrency: 4,
+      onProgress: (progress: PrefetchProgress) => setPrefetch({ done: progress.done, total: progress.total })
+    });
+    prefetchRef.current = handle;
+    void handle.done.then(() => {
+      setPrefetch(undefined);
+    });
+  };
 
   const refresh = async (silent = false) => {
     if (!silent) setSyncing(true);
     const result = await fetchArticleSummaries();
     setArticles(result.articles);
+    setOffline(result.offline);
+    if (!result.offline) setLastSyncAt(new Date().toISOString());
+    if (result.newIds.length > 0) noteSessionNew(result.newIds);
     lastRefreshRef.current = Date.now();
-    if (!silent) {
-      setMessage(
-        result.offline
-          ? `Offline – showing cached articles. ${new Date().toLocaleTimeString('en-US')}`
-          : `Synced at ${new Date().toLocaleTimeString('en-US')}`
-      );
-    } else if (result.offline) {
-      setMessage(`Background sync failed – showing cached articles.`);
-    }
+    if (!result.offline) startPrefetch(result.articles);
     if (!silent) setSyncing(false);
+    void refreshPending();
   };
 
   useEffect(() => {
@@ -61,9 +99,9 @@ export default function HomePage(): React.ReactElement {
       if (cached.length > 0) hydrateArticles(cached);
 
       if (autoSyncOnOpen) {
-        // Background refresh: don't block UI, don't show spinner if we already had cache.
         void refresh(cached.length > 0);
       }
+      void refreshPending();
     })();
 
     void flushPendingQueues();
@@ -74,27 +112,73 @@ export default function HomePage(): React.ReactElement {
       void flushPendingQueues();
       void refresh(true);
     };
-    const onResize = () => setHeight(Math.max(420, window.innerHeight - 172));
+    const onOffline = () => setOffline(true);
+    const onResize = () => setHeight(Math.max(420, window.innerHeight - 196));
     onResize();
     window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
     window.addEventListener('resize', onResize);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      prefetchRef.current?.cancel();
       window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
       window.removeEventListener('resize', onResize);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSyncOnOpen, syncIntervalMinutes]);
+  }, [autoSyncOnOpen, syncIntervalMinutes, bodyPrefetch]);
+
+  // Body content search runs against the local cache when the query is non-empty.
+  useEffect(() => {
+    const query = filters.query.trim().toLowerCase();
+    if (query.length < 3) {
+      setBodyMatches(new Set());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const bodies = await getAllCachedBodies().catch(() => []);
+      if (cancelled) return;
+      const hits = new Set<string>();
+      for (const entry of bodies) {
+        if (entry.body.toLowerCase().includes(query)) hits.add(entry.id);
+      }
+      setBodyMatches(hits);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.query]);
+
+  // Keep last-sync indicator alive (re-render once a minute).
+  useEffect(() => {
+    if (!lastSyncAt) return;
+    const interval = window.setInterval(() => setLastSyncAt((value) => (value ? value : value)), 30_000);
+    return () => window.clearInterval(interval);
+  }, [lastSyncAt]);
+
+  const sessionNewCount = useMemo(
+    () => filtered.filter((article) => sessionNewSet.has(article.id)).length,
+    [filtered, sessionNewSet]
+  );
+
+  const meta: FilterBarMeta = {
+    syncing,
+    offline,
+    lastSyncAt,
+    duplicateCount: dedup.duplicateCount,
+    prefetch,
+    sessionNewCount,
+    pendingCount
+  };
 
   return (
     <main className="min-h-screen">
-      <FilterBar articles={articles} onRefresh={() => void refresh(false)} syncing={syncing} />
+      <FilterBar articles={articles} onRefresh={() => void refresh(false)} meta={meta} />
       <section className="mx-auto max-w-[720px] py-3">
         {!hydrated ? (
           <p className="px-4 pb-2 text-sm text-neutral-700 dark:text-neutral-400">Loading…</p>
-        ) : message ? (
-          <p className="px-4 pb-2 text-sm text-neutral-700 dark:text-neutral-400">{message}</p>
         ) : null}
         {showContinueReading && lastArticle ? (
           <div className="px-3 pb-2">
@@ -113,7 +197,13 @@ export default function HomePage(): React.ReactElement {
           <div className="px-4 py-24 text-center text-neutral-700 dark:text-neutral-400">No articles. The pipeline runs daily at 07:00.</div>
         ) : null}
         {filtered.length > 0 ? (
-          <FixedSizeList height={height} width="100%" itemCount={filtered.length} itemSize={176} itemData={filtered}>
+          <FixedSizeList
+            height={height}
+            width="100%"
+            itemCount={filtered.length}
+            itemSize={188}
+            itemData={{ articles: filtered, sessionNewIds: sessionNewSet }}
+          >
             {Row}
           </FixedSizeList>
         ) : null}
@@ -122,6 +212,12 @@ export default function HomePage(): React.ReactElement {
   );
 }
 
-function Row({ index, style, data }: ListChildComponentProps<ArticleSummary[]>): React.ReactElement {
-  return <ArticleListItem article={data[index]} style={style} />;
+interface RowData {
+  articles: ArticleSummary[];
+  sessionNewIds: Set<string>;
+}
+
+function Row({ index, style, data }: ListChildComponentProps<RowData>): React.ReactElement {
+  const article = data.articles[index];
+  return <ArticleListItem article={article} style={style} isNew={data.sessionNewIds.has(article.id)} />;
 }

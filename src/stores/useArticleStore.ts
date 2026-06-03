@@ -12,18 +12,24 @@ interface ArticleStore {
   lastArticleId?: string;
   articleScrollPositions: Record<string, number>;
   hydrated: boolean;
+  /** IDs that were newly observed in the current app session (since lastOpenedAt). */
+  sessionNewIds: string[];
   setArticles: (articles: ArticleSummary[]) => void;
   hydrateArticles: (articles: ArticleSummary[]) => void;
   setLastArticleId: (id: string) => void;
   setArticleScrollPosition: (id: string, y: number) => void;
   setSortMode: (sortMode: ArticleFilters['sortMode']) => void;
   setQuery: (query: string) => void;
-  togglePriorityOnly: () => void;
+  toggleGaloisOnly: () => void;
+  toggleNewTodayOnly: () => void;
+  toggleShowDuplicates: () => void;
   toggleStatus: (status: ReaderStatus) => void;
   toggleSource: (source: string) => void;
   toggleTag: (tag: string) => void;
   resetFilters: (filters: ArticleFilters) => void;
   updateSummary: (article: ArticleSummary) => void;
+  noteSessionNew: (ids: string[]) => void;
+  clearSessionNew: () => void;
 }
 
 export const useArticleStore = create<ArticleStore>()(
@@ -33,6 +39,7 @@ export const useArticleStore = create<ArticleStore>()(
       filters: defaultFilters,
       articleScrollPositions: {},
       hydrated: false,
+      sessionNewIds: [],
       setArticles: (articles) => set({ articles, hydrated: true }),
       hydrateArticles: (articles) =>
         set((state) => (state.hydrated ? state : { articles, hydrated: true })),
@@ -46,7 +53,9 @@ export const useArticleStore = create<ArticleStore>()(
         })),
       setSortMode: (sortMode) => set((state) => ({ filters: { ...state.filters, sortMode } })),
       setQuery: (query) => set((state) => ({ filters: { ...state.filters, query } })),
-      togglePriorityOnly: () => set((state) => ({ filters: { ...state.filters, priorityOnly: !state.filters.priorityOnly } })),
+      toggleGaloisOnly: () => set((state) => ({ filters: { ...state.filters, galoisOnly: !state.filters.galoisOnly } })),
+      toggleNewTodayOnly: () => set((state) => ({ filters: { ...state.filters, newTodayOnly: !state.filters.newTodayOnly } })),
+      toggleShowDuplicates: () => set((state) => ({ filters: { ...state.filters, showDuplicates: !state.filters.showDuplicates } })),
       toggleStatus: (status) =>
         set((state) => {
           const exists = state.filters.statuses.includes(status);
@@ -70,10 +79,33 @@ export const useArticleStore = create<ArticleStore>()(
       updateSummary: (article) =>
         set((state) => ({
           articles: state.articles.map((item) => (item.id === article.id ? article : item))
-        }))
+        })),
+      noteSessionNew: (ids) =>
+        set((state) => {
+          if (ids.length === 0) return state;
+          const merged = new Set(state.sessionNewIds);
+          for (const id of ids) merged.add(id);
+          return { sessionNewIds: Array.from(merged) };
+        }),
+      clearSessionNew: () => set({ sessionNewIds: [] })
     }),
     {
       name: 'reader-state',
+      version: 2,
+      migrate: (persisted, version) => {
+        const state = (persisted ?? {}) as Record<string, unknown>;
+        if (version < 2) {
+          const filters = (state.filters ?? {}) as Record<string, unknown>;
+          if (typeof filters.priorityOnly === 'boolean') {
+            filters.galoisOnly = filters.priorityOnly;
+            delete filters.priorityOnly;
+          }
+          filters.newTodayOnly = false;
+          filters.showDuplicates = false;
+          state.filters = filters;
+        }
+        return state as never;
+      },
       merge: (persisted, current) => {
         const persistedState = persisted as Partial<ArticleStore> | undefined;
         return {
@@ -81,6 +113,7 @@ export const useArticleStore = create<ArticleStore>()(
           ...persistedState,
           articles: current.articles,
           hydrated: current.hydrated,
+          sessionNewIds: current.sessionNewIds,
           filters: { ...defaultFilters, ...(persistedState?.filters ?? {}) },
           articleScrollPositions: persistedState?.articleScrollPositions ?? current.articleScrollPositions
         };

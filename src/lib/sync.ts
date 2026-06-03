@@ -3,6 +3,14 @@
 import { getCachedArticle, getCachedSummaries, saveArticle, saveSummaries } from '@/lib/cache';
 import type { Article, ArticleSummary } from '@/types/article';
 
+export interface SyncResult {
+  articles: ArticleSummary[];
+  offline: boolean;
+  error?: string;
+  /** IDs that were observed for the first time on this device in this sync. */
+  newIds: string[];
+}
+
 export async function loadCachedSummaries(): Promise<ArticleSummary[]> {
   try {
     return await getCachedSummaries();
@@ -11,22 +19,24 @@ export async function loadCachedSummaries(): Promise<ArticleSummary[]> {
   }
 }
 
-export async function fetchArticleSummaries(signal?: AbortSignal): Promise<{ articles: ArticleSummary[]; offline: boolean; error?: string }> {
+export async function fetchArticleSummaries(signal?: AbortSignal): Promise<SyncResult> {
   try {
     const response = await fetch('/api/articles', { cache: 'no-store', signal });
     if (!response.ok) throw new Error(await response.text());
     const articles = (await response.json()) as ArticleSummary[];
-    await saveSummaries(articles);
-    return { articles, offline: false };
+    const { newIds } = await saveSummaries(articles);
+    const enriched = await getCachedSummaries();
+    return { articles: enriched, offline: false, newIds };
   } catch (error) {
     if (signal?.aborted) {
-      return { articles: [], offline: true, error: 'aborted' };
+      return { articles: [], offline: true, error: 'aborted', newIds: [] };
     }
     const cached = await loadCachedSummaries();
     return {
       articles: cached,
       offline: true,
-      error: error instanceof Error ? error.message : 'Sync failed'
+      error: error instanceof Error ? error.message : 'Sync failed',
+      newIds: []
     };
   }
 }

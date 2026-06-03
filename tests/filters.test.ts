@@ -1,14 +1,25 @@
 import { describe, expect, it } from 'vitest';
 
-import { collectSources, collectTags, filterAndSortArticles, nextUnratedAfter } from '@/lib/filters';
-import type { ArticleSummary } from '@/types/article';
+import { collectSources, collectTags, dedupeArticles, estimateReadingMinutes, filterAndSortArticles, isGalois, nextUnratedAfter, priorityValue } from '@/lib/filters';
+import type { ArticleFilters, ArticleSummary } from '@/types/article';
+
+const baseFilters: ArticleFilters = {
+  sortMode: 'newest',
+  statuses: ['unrated'],
+  sources: [],
+  tags: [],
+  query: '',
+  galoisOnly: false,
+  newTodayOnly: false,
+  showDuplicates: false
+};
 
 const articles: ArticleSummary[] = [
   {
     id: 'a',
     path: '/a.md',
     frontmatter: {
-      title: 'Algebra',
+      title: 'Algebra fundamentals',
       source: 'arXiv',
       author: 'Ada',
       published: '2026-05-19T00:00:00.000Z',
@@ -34,8 +45,8 @@ const articles: ArticleSummary[] = [
     id: 'c',
     path: '/c.md',
     frontmatter: {
-      title: 'OpenClaw capture',
-      source: 'OpenClaw',
+      title: 'Galois capture',
+      source: 'galois',
       author: 'Cara',
       published: '2026-05-18T00:00:00.000Z',
       score: 1,
@@ -48,52 +59,138 @@ const articles: ArticleSummary[] = [
 
 describe('filters', () => {
   it('filters by default unrated status', () => {
-    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated'], sources: [], tags: [], query: '', priorityOnly: false }).map((article) => article.id)).toEqual(['c', 'a']);
+    expect(filterAndSortArticles(articles, baseFilters).map((article) => article.id)).toEqual(['c', 'a']);
   });
 
   it('sorts by score', () => {
-    expect(filterAndSortArticles(articles, { sortMode: 'score', statuses: ['unrated', 'relevant'], sources: [], tags: [], query: '', priorityOnly: false }).map((article) => article.id)).toEqual(['c', 'b', 'a']);
+    expect(filterAndSortArticles(articles, { ...baseFilters, sortMode: 'score', statuses: ['unrated', 'relevant'] }).map((article) => article.id)).toEqual(['c', 'b', 'a']);
   });
 
   it('filters with fuzzy search', () => {
-    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], tags: [], query: 'algebra', priorityOnly: false }).map((article) => article.id)).toEqual(['a']);
+    expect(filterAndSortArticles(articles, { ...baseFilters, statuses: ['unrated', 'relevant'], query: 'algebra' }).map((article) => article.id)).toEqual(['a']);
   });
 
   it('collects sources', () => {
-    expect(collectSources(articles)).toEqual(['arXiv', 'Blog', 'OpenClaw']);
+    expect(collectSources(articles)).toEqual(['arXiv', 'Blog', 'galois']);
   });
 
   it('filters by tags', () => {
-    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], tags: ['ai'], query: '', priorityOnly: false }).map((article) => article.id)).toEqual(['b']);
+    expect(filterAndSortArticles(articles, { ...baseFilters, statuses: ['unrated', 'relevant'], tags: ['ai'] }).map((article) => article.id)).toEqual(['b']);
   });
 
   it('collects tags', () => {
     expect(collectTags(articles)).toEqual(['ai', 'capture', 'math']);
   });
 
-  it('can show only prioritized articles', () => {
-    expect(filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], tags: [], query: '', priorityOnly: true }).map((article) => article.id)).toEqual(['c']);
+  it('galoisOnly filter restricts to galois source', () => {
+    expect(filterAndSortArticles(articles, { ...baseFilters, statuses: ['unrated', 'relevant'], galoisOnly: true }).map((article) => article.id)).toEqual(['c']);
   });
 
   it('finds next unrated article', () => {
     expect(nextUnratedAfter(articles, 'b')?.id).toBe('c');
   });
 
-  it('does not pin priority when pinPriorityOnTop=false (sort newest)', () => {
+  it('does not pin galois when pinGaloisOnTop=false', () => {
     expect(
-      filterAndSortArticles(
-        articles,
-        { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], tags: [], query: '', priorityOnly: false },
-        { pinPriorityOnTop: false }
-      ).map((article) => article.id)
+      filterAndSortArticles(articles, { ...baseFilters, statuses: ['unrated', 'relevant'] }, { pinGaloisOnTop: false }).map((article) => article.id)
     ).toEqual(['b', 'a', 'c']);
   });
 
-  it('pins priority by default even when sorted by newest', () => {
+  it('pins galois by default even when sorted by newest', () => {
     expect(
-      filterAndSortArticles(articles, { sortMode: 'newest', statuses: ['unrated', 'relevant'], sources: [], tags: [], query: '', priorityOnly: false }).map(
-        (article) => article.id
-      )
+      filterAndSortArticles(articles, { ...baseFilters, statuses: ['unrated', 'relevant'] }).map((article) => article.id)
     ).toEqual(['c', 'b', 'a']);
+  });
+});
+
+describe('priorityValue', () => {
+  it('only honours reader_priority on galois source', () => {
+    const galois: ArticleSummary = { ...articles[2] };
+    const nonGalois: ArticleSummary = {
+      ...articles[2],
+      id: 'd',
+      path: '/d.md',
+      frontmatter: { ...articles[2].frontmatter, source: 'arXiv' }
+    };
+    expect(priorityValue(galois)).toBe(200);
+    expect(priorityValue(nonGalois)).toBe(0);
+    expect(isGalois(galois)).toBe(true);
+    expect(isGalois(nonGalois)).toBe(false);
+  });
+
+  it('treats reader_pinned as priority 100 only for galois', () => {
+    const pinnedGalois: ArticleSummary = {
+      id: 'g1',
+      path: '/g1.md',
+      frontmatter: { title: 'x', source: 'galois', reader_pinned: true }
+    };
+    const pinnedOther: ArticleSummary = {
+      id: 'g2',
+      path: '/g2.md',
+      frontmatter: { title: 'x', source: 'arXiv', reader_pinned: true }
+    };
+    expect(priorityValue(pinnedGalois)).toBe(100);
+    expect(priorityValue(pinnedOther)).toBe(0);
+  });
+});
+
+describe('dedupeArticles', () => {
+  it('groups by arxiv_id and keeps the highest-rated winner', () => {
+    const input: ArticleSummary[] = [
+      { id: '1', path: '/p1.md', frontmatter: { title: 'Paper', arxiv_id: '2401.12345v1', reader_status: 'unrated', published: '2026-01-01' } },
+      { id: '2', path: '/p2.md', frontmatter: { title: 'Paper', arxiv_id: '2401.12345v2', reader_status: 'relevant', published: '2026-02-01' } }
+    ];
+    const result = dedupeArticles(input);
+    expect(result.duplicateCount).toBe(1);
+    expect(result.visible).toHaveLength(1);
+    expect(result.visible[0].id).toBe('2');
+    expect(result.visible[0].duplicates).toHaveLength(1);
+    expect(result.visible[0].duplicates?.[0].id).toBe('1');
+  });
+
+  it('groups by normalized url, ignoring tracking params', () => {
+    const input: ArticleSummary[] = [
+      { id: 'a', path: '/a.md', frontmatter: { title: 'Same article one', url: 'https://example.com/post?utm_source=twitter' } },
+      { id: 'b', path: '/b.md', frontmatter: { title: 'Same article two', url: 'https://example.com/post' } }
+    ];
+    const result = dedupeArticles(input);
+    expect(result.duplicateCount).toBe(1);
+    expect(result.visible).toHaveLength(1);
+  });
+
+  it('groups by normalized title+source when ids/urls are missing', () => {
+    const input: ArticleSummary[] = [
+      { id: 'a', path: '/a.md', frontmatter: { title: 'Quantum Field Theory', source: 'arXiv' } },
+      { id: 'b', path: '/b.md', frontmatter: { title: 'Quantum field theory', source: 'arXiv' } }
+    ];
+    const result = dedupeArticles(input);
+    expect(result.duplicateCount).toBe(1);
+    expect(result.visible).toHaveLength(1);
+  });
+
+  it('keeps duplicates visible when showDuplicates is true', () => {
+    const input: ArticleSummary[] = [
+      { id: 'a', path: '/a.md', frontmatter: { title: 'Same', arxiv_id: '1' } },
+      { id: 'b', path: '/b.md', frontmatter: { title: 'Same', arxiv_id: '1' } }
+    ];
+    const result = dedupeArticles(input, { showDuplicates: true });
+    expect(result.visible).toHaveLength(2);
+    expect(result.duplicateCount).toBe(1);
+  });
+});
+
+describe('estimateReadingMinutes', () => {
+  it('returns 1 for short text', () => {
+    expect(estimateReadingMinutes('hello world')).toBe(1);
+  });
+
+  it('scales with word count', () => {
+    const body = 'word '.repeat(2200);
+    expect(estimateReadingMinutes(body)).toBe(10);
+  });
+
+  it('ignores code blocks and math', () => {
+    const body = '```\n' + 'noise '.repeat(2000) + '\n```\nhello world';
+    expect(estimateReadingMinutes(body)).toBe(1);
   });
 });

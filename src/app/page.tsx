@@ -2,6 +2,7 @@
 
 import { BookOpen } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FixedSizeList, type ListChildComponentProps } from 'react-window';
 
@@ -15,7 +16,10 @@ import { useArticleStore } from '@/stores/useArticleStore';
 import { usePreferencesStore } from '@/stores/usePreferencesStore';
 import type { ArticleSummary } from '@/types/article';
 
+const LIST_ITEM_SIZE = 122;
+
 export default function HomePage(): React.ReactElement {
+  const router = useRouter();
   const articles = useArticleStore((state) => state.articles);
   const filters = useArticleStore((state) => state.filters);
   const hydrated = useArticleStore((state) => state.hydrated);
@@ -60,9 +64,14 @@ export default function HomePage(): React.ReactElement {
 
   const lastArticle = useMemo(() => articles.find((article) => article.id === lastArticleId), [articles, lastArticleId]);
 
+  const unratedCount = useMemo(
+    () => dedup.visible.filter((article) => (article.frontmatter.reader_status ?? 'unrated') === 'unrated').length,
+    [dedup.visible]
+  );
+
   const refreshPending = async () => {
-    const depth = await pendingQueueDepth().catch(() => ({ ratings: 0, highlights: 0 }));
-    setPendingCount(depth.ratings + depth.highlights);
+    const depth = await pendingQueueDepth().catch(() => ({ ratings: 0, highlights: 0, notes: 0 }));
+    setPendingCount(depth.ratings + depth.highlights + depth.notes);
   };
 
   const startPrefetch = (summaries: ArticleSummary[]) => {
@@ -114,10 +123,12 @@ export default function HomePage(): React.ReactElement {
     };
     const onOffline = () => setOffline(true);
     const onResize = () => setHeight(Math.max(420, window.innerHeight - 196));
+    const onPaletteSync = () => void refresh(false);
     onResize();
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
     window.addEventListener('resize', onResize);
+    window.addEventListener('reader:sync', onPaletteSync);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
@@ -125,9 +136,26 @@ export default function HomePage(): React.ReactElement {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('reader:sync', onPaletteSync);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoSyncOnOpen, syncIntervalMinutes, bodyPrefetch]);
+
+  // View shortcuts: t = triage, b = library, / = focus search.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.target instanceof HTMLElement && (event.target.isContentEditable || ['INPUT', 'TEXTAREA'].includes(event.target.tagName))) return;
+      if (event.key === 't') router.push('/triage');
+      if (event.key === 'b') router.push('/library');
+      if (event.key === '/') {
+        event.preventDefault();
+        document.querySelector<HTMLInputElement>('[data-search-input]')?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [router]);
 
   // Body content search runs against the local cache when the query is non-empty.
   useEffect(() => {
@@ -170,38 +198,38 @@ export default function HomePage(): React.ReactElement {
     duplicateCount: dedup.duplicateCount,
     prefetch,
     sessionNewCount,
-    pendingCount
+    pendingCount,
+    unratedCount
   };
 
   return (
     <main className="min-h-screen">
       <FilterBar articles={articles} onRefresh={() => void refresh(false)} meta={meta} />
       <section className="mx-auto max-w-[720px] py-3">
-        {!hydrated ? (
-          <p className="px-4 pb-2 text-sm text-neutral-700 dark:text-neutral-400">Loading…</p>
-        ) : null}
+        {!hydrated ? <p className="px-4 pb-2 font-meta text-xs text-mutedink">Loading…</p> : null}
         {showContinueReading && lastArticle ? (
-          <div className="px-3 pb-2">
+          <div className="px-4 pb-2">
             <Link
               href={`/article/${lastArticle.id}`}
-              className="flex min-h-11 items-center gap-3 rounded-md border border-neutral-300 bg-white px-4 py-3 text-sm text-neutral-950 shadow-sm transition hover:border-neutral-500 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50 dark:hover:border-neutral-600"
+              className="flex min-h-11 items-center gap-3 border-b border-hairline px-1 py-3 text-sm text-ink transition-colors hover:bg-surface-muted"
             >
-              <BookOpen className="h-4 w-4 shrink-0" />
+              <BookOpen className="h-4 w-4 shrink-0 text-mutedink" />
               <span className="min-w-0 flex-1 truncate">
-                Continue reading: <span className="font-medium">{lastArticle.frontmatter.title}</span>
+                <span className="font-meta text-[11px] uppercase tracking-[0.08em] text-mutedink">Continue · </span>
+                <span className="font-heading font-bold">{lastArticle.frontmatter.title}</span>
               </span>
             </Link>
           </div>
         ) : null}
         {hydrated && filtered.length === 0 ? (
-          <div className="px-4 py-24 text-center text-neutral-700 dark:text-neutral-400">No articles. The pipeline runs daily at 07:00.</div>
+          <div className="px-4 py-24 text-center text-mutedink">No articles. The pipeline runs daily at 07:00.</div>
         ) : null}
         {filtered.length > 0 ? (
           <FixedSizeList
             height={height}
             width="100%"
             itemCount={filtered.length}
-            itemSize={188}
+            itemSize={LIST_ITEM_SIZE}
             itemData={{ articles: filtered, sessionNewIds: sessionNewSet }}
           >
             {Row}

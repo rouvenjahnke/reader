@@ -1,6 +1,6 @@
 'use client';
 
-import { Clock, Layers, RefreshCw, Search, Settings, Sparkles, X } from 'lucide-react';
+import { Clock, Command, Layers, LibraryBig, ListChecks, RefreshCw, Search, Settings, Sparkles, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -25,6 +25,7 @@ export interface FilterBarMeta {
   prefetch?: { done: number; total: number };
   sessionNewCount: number;
   pendingCount: number;
+  unratedCount: number;
 }
 
 interface Props {
@@ -51,19 +52,60 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
   const hasGalois = articles.some(isGalois);
 
   return (
-    <div className="reader-surface-bar sticky top-0 z-20 border-b px-3 py-3 text-[var(--foreground)]">
+    <div className="reader-surface-bar sticky top-0 z-20 border-b px-3 py-3 text-ink">
       <div className="mx-auto flex max-w-[720px] flex-col gap-3">
         <div className="flex items-center gap-2">
+          <span className="hidden select-none font-heading text-lg font-bold italic sm:block" aria-hidden="true">
+            Reader
+          </span>
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500 dark:text-neutral-400" />
-            <Input className="pl-9" placeholder="Search title, body, tag" value={filters.query} onChange={(event) => setQuery(event.target.value)} />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mutedink" />
+            <Input
+              className="pl-9"
+              placeholder="Search title, body, tag"
+              value={filters.query}
+              data-search-input
+              onChange={(event) => setQuery(event.target.value)}
+            />
           </div>
+          <Button
+            type="button"
+            size="icon"
+            variant="secondary"
+            onClick={() => window.dispatchEvent(new CustomEvent('reader:open-palette'))}
+            aria-label="Command palette"
+            title="Command palette (Ctrl+K)"
+            className="hidden sm:inline-flex"
+          >
+            <Command className="h-4 w-4" />
+          </Button>
           <Button type="button" size="icon" variant="secondary" onClick={onRefresh} disabled={meta.syncing} aria-label="Sync">
             <RefreshCw className={`h-4 w-4 ${meta.syncing ? 'animate-spin' : ''}`} />
           </Button>
           <Link
+            href="/triage"
+            className="relative inline-flex h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted"
+            aria-label="Triage mode"
+            title="Triage unrated articles (t)"
+          >
+            <ListChecks className="h-4 w-4" />
+            {meta.unratedCount > 0 ? (
+              <span className="theorem-label absolute -right-1 -top-1 rounded-sm border border-hairline bg-paper px-1 text-mutedink">
+                {meta.unratedCount > 99 ? '99+' : meta.unratedCount}
+              </span>
+            ) : null}
+          </Link>
+          <Link
+            href="/library"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted"
+            aria-label="Library"
+            title="Library of rated articles (b)"
+          >
+            <LibraryBig className="h-4 w-4" />
+          </Link>
+          <Link
             href="/settings"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-md bg-neutral-100 text-neutral-950 transition hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-50 dark:hover:bg-neutral-700"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted"
             aria-label="Settings"
           >
             <Settings className="h-4 w-4" />
@@ -132,55 +174,57 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
         </div>
       </div>
       {sourcesOpen ? (
-        <div className="fixed inset-0 z-50 bg-black/30 px-3 py-20 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Source filter">
-          <button type="button" className="absolute inset-0 cursor-default" aria-label="Close source filter" onClick={() => setSourcesOpen(false)} />
-          <div className="relative mx-auto flex max-h-[min(70vh,520px)] max-w-[560px] flex-col rounded-md border border-neutral-300 bg-white text-neutral-950 shadow-2xl dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50">
-            <div className="flex items-center justify-between gap-3 border-b border-neutral-300 px-4 py-3 dark:border-neutral-800">
-              <div>
-                <h2 className="text-sm font-semibold">Sources</h2>
-                <p className="text-xs text-neutral-600 dark:text-neutral-400">{sources.length} available</p>
-              </div>
-              <Button type="button" size="icon" variant="ghost" onClick={() => setSourcesOpen(false)} aria-label="Close">
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="overflow-y-auto p-2">
-              {sources.length === 0 ? <p className="px-3 py-8 text-center text-sm text-neutral-600 dark:text-neutral-400">No sources</p> : null}
-              {sources.map((source) => (
-                <label key={source} className="flex min-h-11 items-center gap-3 rounded px-3 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900">
-                  <input type="checkbox" checked={filters.sources.includes(source)} onChange={() => toggleSource(source)} />
-                  <span className="min-w-0 flex-1 truncate">{source}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
+        <FilterDialog title="Sources" count={sources.length} onClose={() => setSourcesOpen(false)}>
+          {sources.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No sources</p> : null}
+          {sources.map((source) => (
+            <label key={source} className="flex min-h-11 items-center gap-3 rounded-sm px-3 text-sm hover:bg-surface-muted">
+              <input type="checkbox" className="accent-[var(--accent)]" checked={filters.sources.includes(source)} onChange={() => toggleSource(source)} />
+              <span className="min-w-0 flex-1 truncate">{source}</span>
+            </label>
+          ))}
+        </FilterDialog>
       ) : null}
       {tagsOpen ? (
-        <div className="fixed inset-0 z-50 bg-black/30 px-3 py-20 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Tag filter">
-          <button type="button" className="absolute inset-0 cursor-default" aria-label="Close tag filter" onClick={() => setTagsOpen(false)} />
-          <div className="relative mx-auto flex max-h-[min(70vh,520px)] max-w-[560px] flex-col rounded-md border border-neutral-300 bg-white text-neutral-950 shadow-2xl dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50">
-            <div className="flex items-center justify-between gap-3 border-b border-neutral-300 px-4 py-3 dark:border-neutral-800">
-              <div>
-                <h2 className="text-sm font-semibold">Tags</h2>
-                <p className="text-xs text-neutral-600 dark:text-neutral-400">{tags.length} available</p>
-              </div>
-              <Button type="button" size="icon" variant="ghost" onClick={() => setTagsOpen(false)} aria-label="Close">
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="overflow-y-auto p-2">
-              {tags.length === 0 ? <p className="px-3 py-8 text-center text-sm text-neutral-600 dark:text-neutral-400">No tags</p> : null}
-              {tags.map((tag) => (
-                <label key={tag} className="flex min-h-11 items-center gap-3 rounded px-3 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900">
-                  <input type="checkbox" checked={selectedTags.includes(tag)} onChange={() => toggleTag(tag)} />
-                  <span className="min-w-0 flex-1 truncate">{tag}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
+        <FilterDialog title="Tags" count={tags.length} onClose={() => setTagsOpen(false)}>
+          {tags.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No tags</p> : null}
+          {tags.map((tag) => (
+            <label key={tag} className="flex min-h-11 items-center gap-3 rounded-sm px-3 text-sm hover:bg-surface-muted">
+              <input type="checkbox" className="accent-[var(--accent)]" checked={selectedTags.includes(tag)} onChange={() => toggleTag(tag)} />
+              <span className="min-w-0 flex-1 truncate">{tag}</span>
+            </label>
+          ))}
+        </FilterDialog>
       ) : null}
+    </div>
+  );
+}
+
+function FilterDialog({
+  title,
+  count,
+  onClose,
+  children
+}: {
+  title: string;
+  count: number;
+  onClose: () => void;
+  children: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/30 px-3 py-20 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`${title} filter`}>
+      <button type="button" className="absolute inset-0 cursor-default" aria-label={`Close ${title} filter`} onClick={onClose} />
+      <div className="relative mx-auto flex max-h-[min(70vh,520px)] max-w-[560px] flex-col rounded-sm border border-hairline bg-surface text-ink shadow-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
+          <div>
+            <h2 className="font-heading text-base font-bold">{title}</h2>
+            <p className="font-meta text-[11px] text-mutedink">{count} available</p>
+          </div>
+          <Button type="button" size="icon" variant="ghost" onClick={onClose} aria-label="Close">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="overflow-y-auto p-2">{children}</div>
+      </div>
     </div>
   );
 }
@@ -188,18 +232,19 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
 function SyncStatusLine({ meta }: { meta: FilterBarMeta }): React.ReactElement | null {
   const items: string[] = [];
 
-  if (meta.offline) items.push('Offline');
+  if (meta.offline) items.push('offline');
   if (meta.prefetch && meta.prefetch.total > 0 && meta.prefetch.done < meta.prefetch.total) {
-    items.push(`Prefetch ${meta.prefetch.done}/${meta.prefetch.total}`);
+    items.push(`prefetch ${meta.prefetch.done}/${meta.prefetch.total}`);
   } else if (meta.lastSyncAt) {
-    items.push(`Synced ${formatRelative(meta.lastSyncAt)}`);
+    items.push(`synced ${formatRelative(meta.lastSyncAt)}`);
   }
   if (meta.pendingCount > 0) items.push(`${meta.pendingCount} pending`);
+  if (meta.unratedCount > 0) items.push(`${meta.unratedCount} unrated`);
 
   if (items.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+    <div className="flex items-center gap-2 font-meta text-[11px] text-mutedink">
       <Clock className="h-3 w-3 shrink-0" />
       <span className="truncate">{items.join(' · ')}</span>
     </div>

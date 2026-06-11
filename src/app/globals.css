@@ -7,32 +7,55 @@
 
 :root {
   color-scheme: light;
-  --background: #faf9f6;
-  --foreground: #171717;
-  --surface: #ffffff;
-  --surface-muted: #f3f2ee;
-  --border: #d8d5cf;
-  --muted: #57534e;
-  --link: #0f766e;
-  --accent: #0f766e;
-  --accent-contrast: #ffffff;
-  --accent-soft: #ccfbf1;
-  --accent-soft-foreground: #134e4a;
+  --background: #faf8f3;
+  --foreground: #1c1814;
+  --surface: #fffdf8;
+  --surface-muted: #f1ede3;
+  --border: #e2dccd;
+  --border-strong: #c7bfae;
+  --muted: #6e675c;
+  --link: #1a4fa0;
+  --accent: #1a4fa0;
+  --accent-contrast: #fffdf8;
+  --accent-soft: #e6edf8;
+  --accent-soft-foreground: #173a73;
+  --destructive: #8c1d18;
+  --positive: #1e5c34;
 }
 
 .dark {
   color-scheme: dark;
-  --background: #0b0b0b;
-  --foreground: #f5f5f5;
-  --surface: #161616;
-  --surface-muted: #1f1f1f;
-  --border: #2a2a2a;
-  --muted: #a3a3a3;
-  --link: #5eead4;
-  --accent: #2dd4bf;
-  --accent-contrast: #0b0b0b;
-  --accent-soft: #134e4a;
-  --accent-soft-foreground: #ccfbf1;
+  --background: #16130f;
+  --foreground: #ebe6dc;
+  --surface: #1d1a15;
+  --surface-muted: #26221b;
+  --border: #353026;
+  --border-strong: #4d463a;
+  --muted: #a59c8c;
+  --link: #8ab4f8;
+  --accent: #8ab4f8;
+  --accent-contrast: #16130f;
+  --accent-soft: #1d2c47;
+  --accent-soft-foreground: #b9d2fa;
+  --destructive: #e57373;
+  --positive: #81c995;
+}
+
+@theme inline {
+  --color-paper: var(--background);
+  --color-ink: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-hairline: var(--border);
+  --color-hairline-strong: var(--border-strong);
+  --color-mutedink: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-fg: var(--accent-soft-foreground);
+  --font-heading: "KaTeX_Main", "STIX Two Text", Georgia, "Times New Roman", serif;
+  --font-body: var(--font-stix), "STIX Two Text", Georgia, "Times New Roman", serif;
+  --font-meta: var(--font-jbmono), "JetBrains Mono", ui-monospace, "Cascadia Mono", monospace;
 }
 
 html {
@@ -46,7 +69,7 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-stix), "STIX Two Text", Georgia, "Times New Roman", serif;
   letter-spacing: 0;
   overscroll-behavior-y: contain;
 }
@@ -57,32 +80,32 @@ a {
 
 ::selection {
   background: #fde68a;
-  color: #171717;
+  color: #1c1814;
 }
 
 mark {
-  border-radius: 0.2rem;
+  border-radius: 0.15rem;
   background: #fde047;
   padding: 0 0.12em;
-  color: #171717;
+  color: #1c1814;
 }
 
 .dark mark {
   background: #facc15;
-  color: #171717;
+  color: #1c1814;
 }
 
 .reader-math-highlight {
-  border-radius: 0.25rem;
+  border-radius: 0.15rem;
   background: #fde047;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  color: #171717;
+  color: #1c1814;
 }
 
 .dark .reader-math-highlight {
   background: #facc15;
-  color: #171717;
+  color: #1c1814;
 }
 
 .reader-math-highlight .katex,
@@ -94,48 +117,40 @@ mark {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
+/* Theorem-style label: tiny letterspaced mono, like figure/theorem tags in a paper. */
+.theorem-label {
+  font-family: var(--font-meta);
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .reader-prose {
-  font-family: Georgia, "Times New Roman", serif;
-  line-height: 1.7;
+  font-family: var(--font-body);
+  line-height: 1.65;
   user-select: text;
   -webkit-user-select: text;
-  color: #1c1917;
-  --tw-prose-body: #1c1917;
-  --tw-prose-headings: #171717;
-  --tw-prose-lead: #44403c;
+  color: var(--foreground);
+  --tw-prose-body: var(--foreground);
+  --tw-prose-headings: var(--foreground);
+  --tw-prose-lead: var(--muted);
   --tw-prose-links: var(--link);
-  --tw-prose-bold: #171717;
-  --tw-prose-counters: #78716c;
-  --tw-prose-bullets: #78716c;
-  --tw-prose-hr: #d6d3d1;
-  --tw-prose-quotes: #292524;
-  --tw-prose-quote-borders: #d6d3d1;
-  --tw-prose-captions: #57534e;
-  --tw-prose-code: #171717;
+  --tw-prose-bold: var(--foreground);
+  --tw-prose-counters: var(--muted);
+  --tw-prose-bullets: var(--muted);
+  --tw-prose-hr: var(--border);
+  --tw-prose-quotes: var(--foreground);
+  --tw-prose-quote-borders: var(--border-strong);
+  --tw-prose-captions: var(--muted);
+  --tw-prose-code: var(--foreground);
   --tw-prose-pre-code: #f5f5f5;
-  --tw-prose-pre-bg: #111827;
-  --tw-prose-th-borders: #d6d3d1;
-  --tw-prose-td-borders: #e7e5e4;
+  --tw-prose-pre-bg: #11161f;
+  --tw-prose-th-borders: var(--border-strong);
+  --tw-prose-td-borders: var(--border);
 }
 
 .dark .reader-prose {
-  color: #ededed;
-  --tw-prose-body: #ededed;
-  --tw-prose-headings: #ffffff;
-  --tw-prose-lead: #d4d4d4;
-  --tw-prose-links: var(--link);
-  --tw-prose-bold: #ffffff;
-  --tw-prose-counters: #a3a3a3;
-  --tw-prose-bullets: #a3a3a3;
-  --tw-prose-hr: #404040;
-  --tw-prose-quotes: #f5f5f5;
-  --tw-prose-quote-borders: #404040;
-  --tw-prose-captions: #a3a3a3;
-  --tw-prose-code: #ffffff;
-  --tw-prose-pre-code: #f5f5f5;
-  --tw-prose-pre-bg: #111827;
-  --tw-prose-th-borders: #404040;
-  --tw-prose-td-borders: #262626;
+  --tw-prose-pre-bg: #11161f;
 }
 
 .reader-swipe-shell {
@@ -150,31 +165,38 @@ mark {
 .reader-prose h4,
 .reader-prose h5,
 .reader-prose h6 {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-heading);
+  font-weight: 700;
   letter-spacing: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
   word-break: break-word;
   hyphens: auto;
+  /* Sticky reader header must not cover anchor targets from the TOC. */
+  scroll-margin-top: 6rem;
 }
 
 .reader-prose h1 {
-  font-size: clamp(1.75rem, 7vw, 2.45rem);
-  line-height: 1.08;
+  font-size: clamp(1.7rem, 6.5vw, 2.3rem);
+  line-height: 1.12;
   margin-top: 1.6rem;
   margin-bottom: 1.2rem;
 }
 
 .reader-prose h2 {
-  font-size: clamp(1.35rem, 5.2vw, 1.9rem);
-  line-height: 1.16;
+  font-size: clamp(1.3rem, 5vw, 1.8rem);
+  line-height: 1.18;
   margin-top: 2rem;
   margin-bottom: 0.8rem;
 }
 
 .reader-prose h3 {
-  font-size: clamp(1.15rem, 4.4vw, 1.45rem);
-  line-height: 1.22;
+  font-size: clamp(1.12rem, 4.2vw, 1.4rem);
+  line-height: 1.24;
+}
+
+.reader-prose code {
+  font-family: var(--font-meta);
 }
 
 .reader-prose p,
@@ -189,8 +211,8 @@ mark {
 .reader-prose a {
   overflow-wrap: anywhere;
   word-break: break-word;
-  text-decoration-thickness: 0.08em;
-  text-underline-offset: 0.15em;
+  text-decoration-thickness: 0.07em;
+  text-underline-offset: 0.16em;
 }
 
 .reader-prose pre,
@@ -218,15 +240,39 @@ mark {
   }
 
   .reader-prose h1 {
-    font-size: clamp(1.55rem, 8vw, 2rem);
+    font-size: clamp(1.5rem, 7.5vw, 1.9rem);
   }
 
   .reader-prose h2 {
-    font-size: clamp(1.25rem, 6vw, 1.6rem);
+    font-size: clamp(1.2rem, 5.6vw, 1.5rem);
   }
 }
 
 .reader-surface-bar {
   background: var(--background);
   border-color: var(--border);
+}
+
+/* GitHub-style rating activity heatmap (settings page). */
+.heatmap-cell {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 2px;
+  background: var(--surface-muted);
+}
+
+.heatmap-cell[data-level="1"] {
+  background: color-mix(in srgb, var(--accent) 25%, var(--surface-muted));
+}
+
+.heatmap-cell[data-level="2"] {
+  background: color-mix(in srgb, var(--accent) 50%, var(--surface-muted));
+}
+
+.heatmap-cell[data-level="3"] {
+  background: color-mix(in srgb, var(--accent) 75%, var(--surface-muted));
+}
+
+.heatmap-cell[data-level="4"] {
+  background: var(--accent);
 }

@@ -1,0 +1,136 @@
+/*
+ * Optional design themes, selected under Settings → Design and applied as
+ * html[data-design="…"] by DesignThemeApplier. Without the attribute the
+ * default Preprint/LaTeX tokens from globals.css apply.
+ */
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * TERMINAL — brutalist console.
+ * IBM Plex Mono everywhere, hard edges, CRT amber, faint scanlines.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+html[data-design='terminal'] {
+  --background: #f2f2ed;
+  --foreground: #131313;
+  --surface: #fafaf7;
+  --surface-muted: #e7e7df;
+  --border: #c9c9bf;
+  --border-strong: #131313;
+  --muted: #5c5c54;
+  --link: #b45309;
+  --accent: #b45309;
+  --accent-contrast: #fafaf7;
+  --accent-soft: #f3e4cf;
+  --accent-soft-foreground: #7c3d05;
+  --destructive: #b91c1c;
+  --positive: #15803d;
+}
+
+html[data-design='terminal'].dark {
+  --background: #0c0c0c;
+  --foreground: #d8d8d2;
+  --surface: #131313;
+  --surface-muted: #1c1c1a;
+  --border: #2a2a26;
+  --border-strong: #4a4a42;
+  --muted: #8f8f85;
+  --link: #f59e0b;
+  --accent: #f59e0b;
+  --accent-contrast: #0c0c0c;
+  --accent-soft: #33260a;
+  --accent-soft-foreground: #fcd34d;
+  --destructive: #f87171;
+  --positive: #4ade80;
+}
+
+html[data-design='terminal'] body,
+html[data-design='terminal'] .font-body,
+html[data-design='terminal'] .reader-prose {
+  font-family: var(--font-plexmono), 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 0.97em;
+}
+
+html[data-design='terminal'] .font-heading,
+html[data-design='terminal'] .reader-prose :is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font-plexmono), 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+html[data-design='terminal'] .font-meta,
+html[data-design='terminal'] .theorem-label {
+  font-family: var(--font-plexmono), 'IBM Plex Mono', ui-monospace, monospace;
+  letter-spacing: 0.14em;
+}
+
+/* Brutalism: no rounded corners anywhere. */
+html[data-design='terminal'] [class*='rounded'],
+html[data-design='terminal'] .heatmap-cell {
+  border-radius: 0 !important;
+}
+
+html[data-design='terminal'] body {
+  background-image: repeating-linear-gradient(0deg, transparent 0 2px, rgba(0, 0, 0, 0.014) 2px 4px);
+}
+
+html[data-design='terminal'].dark body {
+  background-image: repeating-linear-gradient(0deg, transparent 0 2px, rgba(255, 255, 255, 0.018) 2px 4px);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * LEGIBILITY — reading-optimised.
+ * Neutral near-white paper (no warm tint), near-black text at ~15:1 contrast
+ * but below pure black/white to avoid glare and halation, AAA-contrast muted
+ * text and links, slightly larger and looser prose. Dark mode avoids pure
+ * black backgrounds and pure white text for the same reason.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+html[data-design='legibility'] {
+  --background: #fbfbf9;
+  --foreground: #1a1a1a;
+  --surface: #ffffff;
+  --surface-muted: #f0f0ee;
+  --border: #e3e3e0;
+  --border-strong: #b9b9b4;
+  --muted: #595955;
+  --link: #1849a9;
+  --accent: #1849a9;
+  --accent-contrast: #ffffff;
+  --accent-soft: #e8eefb;
+  --accent-soft-foreground: #143c8c;
+  --destructive: #99201a;
+  --positive: #1c5c34;
+}
+
+html[data-design='legibility'].dark {
+  --background: #1b1b1b;
+  --foreground: #d9d9d6;
+  --surface: #222222;
+  --surface-muted: #2a2a2a;
+  --border: #383838;
+  --border-strong: #565656;
+  --muted: #a3a39e;
+  --link: #8fb4f0;
+  --accent: #8fb4f0;
+  --accent-contrast: #1b1b1b;
+  --accent-soft: #1f2b40;
+  --accent-soft-foreground: #bcd2f5;
+  --destructive: #ef8a8a;
+  --positive: #8ecf9d;
+}
+
+/* Looser measure: bigger type, taller lines, more paragraph air. */
+html[data-design='legibility'] .reader-prose {
+  font-size: 1.0625rem;
+  line-height: 1.75;
+}
+
+html[data-design='legibility'] .reader-prose p {
+  margin-top: 1.1em;
+  margin-bottom: 1.1em;
+}
+
+html[data-design='legibility'] .reader-prose a {
+  text-decoration-thickness: 0.09em;
+  text-underline-offset: 0.2em;
+}

@@ -11,7 +11,9 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+# Cap the V8 heap so trace collection GCs instead of growing until the
+# container's OOM killer sends SIGKILL (low-memory LXC/Docker hosts).
+RUN NODE_OPTIONS="--max-old-space-size=1024" npm run build
 RUN rm -rf \
   .next/standalone/node_modules/@img \
   .next/standalone/node_modules/sharp \

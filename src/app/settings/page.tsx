@@ -1,6 +1,6 @@
 'use client';
 
-import { BarChart3, Keyboard, Monitor, Moon, RefreshCw, RotateCcw, Sun, Trash2 } from 'lucide-react';
+import { BarChart3, Keyboard, Link2, Monitor, Moon, RefreshCw, RotateCcw, Sun, Trash2 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { flushPendingQueues } from '@/lib/cache';
-import { computeReadingStats } from '@/lib/stats';
+import { computeReadingStats, type ActivityDay } from '@/lib/stats';
 import { loadCachedSummaries } from '@/lib/sync';
 import { clearSyncLog, readSyncLog, type SyncLogEntry } from '@/lib/syncLog';
 import { defaultPreferences, type FontSize, usePreferencesStore } from '@/stores/usePreferencesStore';
@@ -27,12 +27,17 @@ const statusOptions: Array<{ value: ReaderStatus; label: string }> = [
 ];
 
 const shortcutRows: Array<{ keys: string; label: string }> = [
+  { keys: 'Ctrl K', label: 'Command palette' },
+  { keys: '/', label: 'Focus search (list)' },
+  { keys: 't', label: 'Triage mode (list)' },
+  { keys: 'b', label: 'Library (list)' },
   { keys: '←  →', label: 'Previous / next article' },
-  { keys: '1', label: 'Rate irrelevant' },
-  { keys: '2', label: 'Rate relevant' },
-  { keys: '3', label: 'Rate high relevant' },
-  { keys: 'Esc', label: 'Back to list' },
-  { keys: '?', label: 'Toggle shortcuts overlay' }
+  { keys: '1 · 2 · 3', label: 'Rate irrelevant / relevant / high' },
+  { keys: 'c', label: 'Table of contents (reader)' },
+  { keys: 'n', label: 'Focus note (reader)' },
+  { keys: 'o', label: 'Open original source (reader)' },
+  { keys: '?', label: 'Toggle shortcuts overlay' },
+  { keys: 'Esc', label: 'Back / close overlay' }
 ];
 
 export default function SettingsPage(): React.ReactElement {
@@ -79,16 +84,16 @@ export default function SettingsPage(): React.ReactElement {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-[720px] flex-col gap-8 px-4 py-8 text-neutral-950 dark:text-neutral-50">
+    <main className="mx-auto flex min-h-screen max-w-[720px] flex-col gap-8 px-4 py-8 text-ink">
       <div>
-        <h1 className="text-2xl font-semibold">Settings</h1>
-        <p className="mt-2 text-sm text-neutral-700 dark:text-neutral-400">
-          Local preferences are saved on this device. Nextcloud credentials stay server-side in <code>.env</code>.
+        <h1 className="font-heading text-2xl font-bold">Settings</h1>
+        <p className="mt-2 text-sm text-mutedink">
+          Local preferences are saved on this device. Nextcloud credentials stay server-side in <code className="font-meta text-xs">.env</code>.
         </p>
       </div>
 
       <section className="grid gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-400">Reading</h2>
+        <h2 className="theorem-label text-mutedink">Reading</h2>
 
         <ToggleRow
           label="Pin Galois on top"
@@ -129,7 +134,7 @@ export default function SettingsPage(): React.ReactElement {
       </section>
 
       <section className="grid gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-400">Sync &amp; offline</h2>
+        <h2 className="theorem-label text-mutedink">Sync &amp; offline</h2>
 
         <ToggleRow
           label="Auto-sync on app open"
@@ -158,12 +163,39 @@ export default function SettingsPage(): React.ReactElement {
               }
             }}
           />
-          <span className="text-xs text-neutral-600 dark:text-neutral-400">Minimum 5 minutes. Applies to background polling on the home page.</span>
+          <span className="text-xs text-mutedink">Minimum 5 minutes. Applies to background polling on the home page.</span>
         </label>
       </section>
 
       <section className="grid gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-400">Defaults</h2>
+        <div className="flex items-center gap-2">
+          <Link2 className="h-4 w-4 text-mutedink" />
+          <h2 className="theorem-label text-mutedink">Obsidian</h2>
+        </div>
+        <label className="grid gap-2 text-sm font-medium">
+          Vault name
+          <Input
+            value={prefs.obsidianVault}
+            placeholder="e.g. obsidian - mathematics"
+            onChange={(event) => prefs.setPreference('obsidianVault', event.target.value)}
+          />
+          <span className="text-xs text-mutedink">Leave empty to hide the »Open in Obsidian« button in the reader.</span>
+        </label>
+        <label className="grid gap-2 text-sm font-medium">
+          Pipeline folder (relative to vault root)
+          <Input
+            value={prefs.obsidianPipelinePath}
+            placeholder="e.g. 00_inbox/reader-pipeline"
+            onChange={(event) => prefs.setPreference('obsidianPipelinePath', event.target.value)}
+          />
+          <span className="text-xs text-mutedink">
+            The folder inside the vault that mirrors the Nextcloud pipeline directory. Deep links open the article&apos;s markdown file directly.
+          </span>
+        </label>
+      </section>
+
+      <section className="grid gap-3">
+        <h2 className="theorem-label text-mutedink">Defaults</h2>
 
         <div className="grid gap-2">
           <span className="text-sm font-medium">Default sort mode</span>
@@ -196,64 +228,66 @@ export default function SettingsPage(): React.ReactElement {
               </Button>
             ))}
           </div>
-          <span className="text-xs text-neutral-600 dark:text-neutral-400">Empty = falls back to »Unrated«. Saved here, applied to the filter bar manually.</span>
+          <span className="text-xs text-mutedink">Empty = falls back to »Unrated«. Saved here, applied to the filter bar manually.</span>
         </div>
       </section>
 
       <section className="grid gap-3">
         <div className="flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-400">Reading stats</h2>
+          <BarChart3 className="h-4 w-4 text-mutedink" />
+          <h2 className="theorem-label text-mutedink">Reading stats</h2>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard label="Rated today" value={stats.ratedToday} />
           <StatCard label="Rated 7d" value={stats.ratedThisWeek} />
-          <StatCard label="New today" value={stats.newToday} />
+          <StatCard label="Streak" value={stats.currentStreak} suffix="d" />
           <StatCard label="Total rated" value={stats.totalRated} />
         </div>
-        <div className="grid gap-2 rounded-md border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950">
+
+        <div className="grid gap-2 rounded-sm border border-hairline bg-surface p-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="font-meta text-[11px] uppercase tracking-[0.08em] text-mutedink">Rating activity · last {stats.activity.length} days</span>
+            <span className="font-meta text-[11px] tabular-nums text-mutedink">longest streak {stats.longestStreak}d</span>
+          </div>
+          <Heatmap activity={stats.activity} />
+        </div>
+
+        <div className="grid gap-2 rounded-sm border border-hairline bg-surface p-3">
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-              relevant · {stats.byStatus.relevant}
-            </Badge>
-            <Badge className="border-yellow-200 bg-yellow-50 text-yellow-800 dark:border-yellow-900 dark:bg-yellow-950 dark:text-yellow-200">
-              high · {stats.byStatus.high_relevant}
-            </Badge>
-            <Badge className="border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
-              irrelevant · {stats.byStatus.irrelevant}
-            </Badge>
+            <Badge>relevant · {stats.byStatus.relevant}</Badge>
+            <Badge>high · {stats.byStatus.high_relevant}</Badge>
+            <Badge>irrelevant · {stats.byStatus.irrelevant}</Badge>
+            <Badge>new today · {stats.newToday}</Badge>
           </div>
           {stats.bySource.length > 0 ? (
-            <div className="grid gap-1.5 text-xs text-neutral-700 dark:text-neutral-300">
+            <div className="grid gap-1.5 text-xs text-ink">
               {stats.bySource.map((entry) => (
                 <SourceBar key={entry.source} source={entry.source} count={entry.count} total={stats.totalRated} />
               ))}
             </div>
           ) : (
-            <p className="text-xs text-neutral-600 dark:text-neutral-400">No ratings yet.</p>
+            <p className="text-xs text-mutedink">No ratings yet.</p>
           )}
         </div>
       </section>
 
       <section className="grid gap-3">
         <div className="flex items-center gap-2">
-          <Keyboard className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-400">Keyboard shortcuts</h2>
+          <Keyboard className="h-4 w-4 text-mutedink" />
+          <h2 className="theorem-label text-mutedink">Keyboard shortcuts</h2>
         </div>
-        <ul className="grid gap-2 rounded-md border border-neutral-200 bg-white p-3 text-sm dark:border-neutral-800 dark:bg-neutral-950">
+        <ul className="grid gap-2 rounded-sm border border-hairline bg-surface p-3 text-sm">
           {shortcutRows.map((row) => (
             <li key={row.keys} className="flex items-center justify-between gap-3">
-              <span className="text-neutral-700 dark:text-neutral-300">{row.label}</span>
-              <kbd className="rounded border border-neutral-300 bg-neutral-100 px-2 py-0.5 font-mono text-xs text-neutral-800 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
-                {row.keys}
-              </kbd>
+              <span className="text-ink">{row.label}</span>
+              <kbd className="rounded-sm border border-hairline bg-surface-muted px-2 py-0.5 font-meta text-xs text-ink">{row.keys}</kbd>
             </li>
           ))}
         </ul>
       </section>
 
       <section className="grid gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-400">Theme</h2>
+        <h2 className="theorem-label text-mutedink">Theme</h2>
         <div className="flex gap-2">
           <Button type="button" variant={theme === 'light' ? 'default' : 'secondary'} onClick={() => setTheme('light')}>
             <Sun className="h-4 w-4" /> Light
@@ -268,18 +302,18 @@ export default function SettingsPage(): React.ReactElement {
       </section>
 
       <section className="grid gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-400">Connection</h2>
+        <h2 className="theorem-label text-mutedink">Connection</h2>
         <div className="flex items-center gap-3">
           <Button type="button" onClick={testConnection}>
             Test Nextcloud connection
           </Button>
-          {message ? <p className="text-sm text-neutral-700 dark:text-neutral-400">{message}</p> : null}
+          {message ? <p className="text-sm text-mutedink">{message}</p> : null}
         </div>
       </section>
 
       <section className="grid gap-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-400">Sync log</h2>
+          <h2 className="theorem-label text-mutedink">Sync log</h2>
           <div className="flex gap-2">
             <Button type="button" size="sm" variant="secondary" onClick={syncNow}>
               <RefreshCw className="h-4 w-4" /> Sync
@@ -289,19 +323,19 @@ export default function SettingsPage(): React.ReactElement {
             </Button>
           </div>
         </div>
-        <div className="max-h-72 overflow-y-auto rounded-md border border-neutral-300 bg-white text-neutral-950 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50">
-          {syncLog.length === 0 ? <p className="px-3 py-8 text-center text-sm text-neutral-700 dark:text-neutral-400">No sync entries yet.</p> : null}
+        <div className="max-h-72 overflow-y-auto rounded-sm border border-hairline bg-surface text-ink">
+          {syncLog.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No sync entries yet.</p> : null}
           {syncLog.map((entry) => (
-            <div key={entry.id} className="border-b border-neutral-100 px-3 py-2 last:border-b-0 dark:border-neutral-900">
-              <p className={entry.level === 'error' ? 'text-sm text-red-700 dark:text-red-300' : 'text-sm text-neutral-800 dark:text-neutral-200'}>{entry.message}</p>
-              <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-500">{new Date(entry.createdAt).toLocaleString('en-US')}</p>
+            <div key={entry.id} className="border-b border-hairline px-3 py-2 last:border-b-0">
+              <p className={entry.level === 'error' ? 'text-sm text-[#8c1d18] dark:text-[#f2b8b5]' : 'text-sm text-ink'}>{entry.message}</p>
+              <p className="mt-1 font-meta text-xs text-mutedink">{new Date(entry.createdAt).toLocaleString('en-US')}</p>
             </div>
           ))}
         </div>
       </section>
 
       <section className="grid gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-400">Reset</h2>
+        <h2 className="theorem-label text-mutedink">Reset</h2>
         <div>
           <Button
             type="button"
@@ -331,14 +365,14 @@ function ToggleRow({
   onChange: (value: boolean) => void;
 }): React.ReactElement {
   return (
-    <label className="flex cursor-pointer items-start justify-between gap-4 rounded-md border border-neutral-200 bg-white px-4 py-3 dark:border-neutral-800 dark:bg-neutral-950">
+    <label className="flex cursor-pointer items-start justify-between gap-4 rounded-sm border border-hairline bg-surface px-4 py-3">
       <span className="flex flex-col gap-1">
         <span className="text-sm font-medium">{label}</span>
-        {description ? <span className="text-xs text-neutral-600 dark:text-neutral-400">{description}</span> : null}
+        {description ? <span className="text-xs text-mutedink">{description}</span> : null}
       </span>
       <input
         type="checkbox"
-        className="mt-1 h-5 w-5 shrink-0 cursor-pointer accent-amber-500"
+        className="mt-1 h-5 w-5 shrink-0 cursor-pointer accent-[var(--accent)]"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
       />
@@ -346,11 +380,47 @@ function ToggleRow({
   );
 }
 
-function StatCard({ label, value }: { label: string; value: number }): React.ReactElement {
+function StatCard({ label, value, suffix }: { label: string; value: number; suffix?: string }): React.ReactElement {
   return (
-    <div className="rounded-md border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-950">
-      <div className="text-2xl font-semibold">{value}</div>
-      <div className="text-xs uppercase tracking-wide text-neutral-600 dark:text-neutral-400">{label}</div>
+    <div className="rounded-sm border border-hairline bg-surface p-3">
+      <div className="font-heading text-2xl font-bold tabular-nums">
+        {value}
+        {suffix ? <span className="text-sm text-mutedink"> {suffix}</span> : null}
+      </div>
+      <div className="font-meta text-[11px] uppercase tracking-[0.08em] text-mutedink">{label}</div>
+    </div>
+  );
+}
+
+function activityLevel(count: number): number {
+  if (count <= 0) return 0;
+  if (count === 1) return 1;
+  if (count <= 3) return 2;
+  if (count <= 6) return 3;
+  return 4;
+}
+
+function Heatmap({ activity }: { activity: ActivityDay[] }): React.ReactElement {
+  // Column-major grid: each column is 7 consecutive days, oldest column first.
+  const columns: ActivityDay[][] = [];
+  for (let i = 0; i < activity.length; i += 7) {
+    columns.push(activity.slice(i, i + 7));
+  }
+
+  return (
+    <div className="flex gap-[3px] overflow-x-auto pb-1">
+      {columns.map((column) => (
+        <div key={column[0]?.date} className="flex flex-col gap-[3px]">
+          {column.map((day) => (
+            <div
+              key={day.date}
+              className="heatmap-cell"
+              data-level={activityLevel(day.count)}
+              title={`${day.date}: ${day.count} rated`}
+            />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
@@ -361,12 +431,12 @@ function SourceBar({ source, count, total }: { source: string; count: number; to
     <div>
       <div className="flex items-center justify-between gap-2">
         <span className="truncate">{source}</span>
-        <span className="shrink-0 tabular-nums text-neutral-600 dark:text-neutral-400">
+        <span className="shrink-0 font-meta tabular-nums text-mutedink">
           {count} · {pct}%
         </span>
       </div>
-      <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
-        <div className="h-full bg-teal-500" style={{ width: `${pct}%` }} />
+      <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-surface-muted">
+        <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );

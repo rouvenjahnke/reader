@@ -21,7 +21,8 @@ export function parseArticle(raw: string): { frontmatter: ArticleFrontmatter; bo
       priority: normalizeNumber(data.priority),
       reader_priority: normalizeReaderPriority(data.reader_priority),
       reader_pinned: normalizeBoolean(data.reader_pinned),
-      reader_status: normalizeReaderStatus(data.reader_status)
+      reader_status: normalizeReaderStatus(data.reader_status),
+      reader_note: normalizeString(data.reader_note)
     },
     body: parsed.content
   };
@@ -41,6 +42,20 @@ export function setRating(raw: string, status: Exclude<ReaderStatus, 'unrated'>,
   const parsed = parseMatter(raw);
   parsed.data.reader_status = status;
   parsed.data.reader_rated_at = ratedAt.toISOString();
+  return matter.stringify(parsed.content, parsed.data);
+}
+
+/** Set or clear the personal note. An empty note removes both fields. */
+export function setNote(raw: string, note: string, updatedAt = new Date()): string {
+  const parsed = parseMatter(raw);
+  const trimmed = note.trim();
+  if (trimmed) {
+    parsed.data.reader_note = trimmed;
+    parsed.data.reader_note_updated_at = updatedAt.toISOString();
+  } else {
+    delete parsed.data.reader_note;
+    delete parsed.data.reader_note_updated_at;
+  }
   return matter.stringify(parsed.content, parsed.data);
 }
 

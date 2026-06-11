@@ -19,6 +19,8 @@ export interface ArticleFrontmatter {
   reader_read_seconds?: number;
   reader_priority?: number;
   reader_pinned?: boolean;
+  reader_note?: string;
+  reader_note_updated_at?: string;
   [key: string]: unknown;
 }
 
@@ -61,6 +63,14 @@ export interface PendingRating {
   path: string;
   status: Exclude<ReaderStatus, 'unrated'>;
   createdAt: string;
+}
+
+export interface PendingNote {
+  /** Article id — one pending note per article, latest wins. */
+  id: string;
+  path: string;
+  note: string;
+  updatedAt: string;
 }
 
 export interface PendingHighlight {

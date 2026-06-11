@@ -3,7 +3,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
 import { appendSyncLog } from '@/lib/syncLog';
-import type { Article, ArticleSummary, PendingHighlight, PendingRating } from '@/types/article';
+import type { Article, ArticleSummary, PendingHighlight, PendingNote, PendingRating } from '@/types/article';
 
 interface ArticleMeta {
   id: string;
@@ -28,6 +28,10 @@ interface ReaderDb extends DBSchema {
     key: string;
     value: PendingHighlight;
   };
+  pending_notes: {
+    key: string;
+    value: PendingNote;
+  };
   article_meta: {
     key: string;
     value: ArticleMeta;
@@ -38,7 +42,7 @@ let dbPromise: Promise<IDBPDatabase<ReaderDb>> | null = null;
 
 function getDb(): Promise<IDBPDatabase<ReaderDb>> {
   if (!dbPromise) {
-    dbPromise = openDB<ReaderDb>('reader-db', 2, {
+    dbPromise = openDB<ReaderDb>('reader-db', 3, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const articles = db.createObjectStore('articles', { keyPath: 'id' });
@@ -49,6 +53,9 @@ function getDb(): Promise<IDBPDatabase<ReaderDb>> {
         }
         if (oldVersion < 2) {
           db.createObjectStore('article_meta', { keyPath: 'id' });
+        }
+        if (oldVersion < 3) {
+          db.createObjectStore('pending_notes', { keyPath: 'id' });
         }
       }
     });
@@ -183,10 +190,41 @@ export async function queueHighlight(highlight: PendingHighlight): Promise<void>
   await db.put('pending_highlights', highlight);
 }
 
-export async function pendingQueueDepth(): Promise<{ ratings: number; highlights: number }> {
+export async function queueNote(note: PendingNote): Promise<void> {
   const db = await getDb();
-  const [ratings, highlights] = await Promise.all([db.count('pending_ratings'), db.count('pending_highlights')]);
-  return { ratings, highlights };
+  await db.put('pending_notes', note);
+}
+
+export async function updateCachedNote(id: string, note: string, updatedAt: string): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction(['articles', 'summaries'], 'readwrite');
+  const [article, summary] = await Promise.all([tx.objectStore('articles').get(id), tx.objectStore('summaries').get(id)]);
+  const trimmed = note.trim();
+
+  for (const record of [article, summary]) {
+    if (!record) continue;
+    if (trimmed) {
+      record.frontmatter.reader_note = trimmed;
+      record.frontmatter.reader_note_updated_at = updatedAt;
+    } else {
+      delete record.frontmatter.reader_note;
+      delete record.frontmatter.reader_note_updated_at;
+    }
+  }
+
+  if (article) await tx.objectStore('articles').put(article);
+  if (summary) await tx.objectStore('summaries').put(summary);
+  await tx.done;
+}
+
+export async function pendingQueueDepth(): Promise<{ ratings: number; highlights: number; notes: number }> {
+  const db = await getDb();
+  const [ratings, highlights, notes] = await Promise.all([
+    db.count('pending_ratings'),
+    db.count('pending_highlights'),
+    db.count('pending_notes')
+  ]);
+  return { ratings, highlights, notes };
 }
 
 export async function flushPendingQueues(): Promise<void> {
@@ -210,6 +248,25 @@ export async function flushPendingQueues(): Promise<void> {
       }
     } catch (error) {
       appendSyncLog('error', `Rating sync failed: ${rating.path} (${errorMessage(error)})`);
+    }
+  }
+
+  const notes = await db.getAll('pending_notes');
+  for (const note of notes) {
+    try {
+      const response = await fetch(`/api/articles/${note.id}/note`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ note: note.note })
+      });
+      if (response.ok) {
+        await db.delete('pending_notes', note.id);
+        appendSyncLog('info', `Note synced: ${note.path}`);
+      } else {
+        appendSyncLog('error', `Note sync failed: ${note.path} (${response.status})`);
+      }
+    } catch (error) {
+      appendSyncLog('error', `Note sync failed: ${note.path} (${errorMessage(error)})`);
     }
   }
 

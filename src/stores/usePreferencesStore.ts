@@ -18,6 +18,10 @@ export interface ReaderPreferences {
   showContinueReading: boolean;
   showReadingProgress: boolean;
   confirmIrrelevant: boolean;
+  /** Obsidian vault name for deep links; empty disables the button. */
+  obsidianVault: string;
+  /** Pipeline folder relative to the vault root, e.g. "00_inbox/reader-pipeline". */
+  obsidianPipelinePath: string;
   /** ISO timestamp of the last time the app was opened — used to flag "new since…". */
   lastOpenedAt?: string;
 }
@@ -32,7 +36,9 @@ export const defaultPreferences: ReaderPreferences = {
   defaultStatuses: ['unrated'],
   showContinueReading: true,
   showReadingProgress: true,
-  confirmIrrelevant: false
+  confirmIrrelevant: false,
+  obsidianVault: '',
+  obsidianPipelinePath: ''
 };
 
 interface PreferencesStore extends ReaderPreferences {
@@ -49,7 +55,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
     }),
     {
       name: 'reader-preferences',
-      version: 2,
+      version: 3,
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Record<string, unknown>;
         if (version < 2) {
@@ -59,6 +65,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
           }
           delete state.pinPriorityOnTop;
         }
+        // v2 → v3: obsidianVault / obsidianPipelinePath added; defaults fill in.
         return state as never;
       }
     }

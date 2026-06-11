@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { collectSources, collectTags, dedupeArticles, estimateReadingMinutes, filterAndSortArticles, isGalois, nextUnratedAfter, priorityValue } from '@/lib/filters';
+import {
+  applyPapersVisibility,
+  collectSources,
+  collectTags,
+  dedupeArticles,
+  estimateReadingMinutes,
+  filterAndSortArticles,
+  isGalois,
+  nextUnratedAfter,
+  priorityValue
+} from '@/lib/filters';
 import type { ArticleFilters, ArticleSummary } from '@/types/article';
 
 const baseFilters: ArticleFilters = {
@@ -131,6 +141,29 @@ describe('priorityValue', () => {
     };
     expect(priorityValue(pinnedGalois)).toBe(100);
     expect(priorityValue(pinnedOther)).toBe(100);
+  });
+});
+
+describe('applyPapersVisibility', () => {
+  const pipeline: ArticleSummary = { id: 'p1', path: '/pipeline/a.md', frontmatter: { title: 'Pipeline article' } };
+  const paper: ArticleSummary = { id: 'x1', path: '/papers/b.md', collection: 'papers', frontmatter: { title: 'Starred paper' } };
+  const mixed = [pipeline, paper];
+
+  it('keeps everything when shown', () => {
+    expect(applyPapersVisibility(mixed, 'shown')).toEqual(mixed);
+  });
+
+  it('restricts to papers when only', () => {
+    expect(applyPapersVisibility(mixed, 'only').map((article) => article.id)).toEqual(['x1']);
+  });
+
+  it('removes papers when hidden', () => {
+    expect(applyPapersVisibility(mixed, 'hidden').map((article) => article.id)).toEqual(['p1']);
+  });
+
+  it('is a no-op for sets without papers', () => {
+    expect(applyPapersVisibility([pipeline], 'only')).toEqual([]);
+    expect(applyPapersVisibility([pipeline], 'hidden')).toEqual([pipeline]);
   });
 });
 

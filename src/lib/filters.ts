@@ -1,6 +1,6 @@
 import Fuse from 'fuse.js';
 
-import type { ArticleFilters, ArticleSummary, ReaderStatus } from '@/types/article';
+import type { ArticleFilters, ArticleSummary, PapersVisibility, ReaderStatus } from '@/types/article';
 
 const defaultStatuses: ReaderStatus[] = ['unrated'];
 
@@ -64,6 +64,16 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
 
     return dateValue(b.frontmatter.published ?? b.frontmatter.fetched ?? b.lastModified) - dateValue(a.frontmatter.published ?? a.frontmatter.fetched ?? a.lastModified);
   });
+}
+
+/**
+ * Restrict the article set according to the papers-folder preference. Applied
+ * before dedup/filtering in every view so 'hidden' papers exist nowhere.
+ */
+export function applyPapersVisibility(articles: ArticleSummary[], visibility: PapersVisibility): ArticleSummary[] {
+  if (visibility === 'only') return articles.filter((article) => article.collection === 'papers');
+  if (visibility === 'hidden') return articles.filter((article) => article.collection !== 'papers');
+  return articles;
 }
 
 export function collectSources(articles: ArticleSummary[]): string[] {

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { collectSources, collectTags, isGalois, PRIORITY_SOURCE } from '@/lib/filters';
 import { useArticleStore } from '@/stores/useArticleStore';
+import { usePreferencesStore } from '@/stores/usePreferencesStore';
 import type { ArticleSummary, ReaderStatus } from '@/types/article';
 
 const statuses: Array<{ value: ReaderStatus; label: string }> = [
@@ -50,6 +51,9 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
   const tags = collectTags(articles);
   const selectedTags = filters.tags ?? [];
   const hasGalois = articles.some(isGalois);
+  const papersVisibility = usePreferencesStore((state) => state.papersVisibility);
+  const setPreference = usePreferencesStore((state) => state.setPreference);
+  const hasPapers = articles.some((article) => article.collection === 'papers');
 
   return (
     <div className="reader-surface-bar sticky top-0 z-20 border-b px-3 py-3 text-ink">
@@ -141,6 +145,18 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
               title={`Only ${PRIORITY_SOURCE} articles`}
             >
               Galois
+            </Button>
+          ) : null}
+          {hasPapers ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={papersVisibility === 'only' ? 'default' : 'secondary'}
+              onClick={() => setPreference('papersVisibility', papersVisibility === 'only' ? 'shown' : 'only')}
+              aria-pressed={papersVisibility === 'only'}
+              title="Only articles from the papers folder"
+            >
+              Papers
             </Button>
           ) : null}
           {statuses.map((status) => (

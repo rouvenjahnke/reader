@@ -24,12 +24,20 @@ export interface ArticleFrontmatter {
   [key: string]: unknown;
 }
 
+/** Where a summary was loaded from: the daily pipeline folder (default) or the optional papers folder. */
+export type ArticleCollection = 'papers';
+
+/** Visibility of the optional papers folder in all views. */
+export type PapersVisibility = 'shown' | 'only' | 'hidden';
+
 export interface ArticleSummary {
   id: string;
   path: string;
   etag?: string;
   lastModified?: string;
   size?: number;
+  /** Set to 'papers' for articles from NEXTCLOUD_PAPERS_PATH; undefined for the pipeline folder. */
+  collection?: ArticleCollection;
   frontmatter: ArticleFrontmatter;
   /** Client-side: ISO timestamp when this id was first observed on this device. */
   firstSeenAt?: string;

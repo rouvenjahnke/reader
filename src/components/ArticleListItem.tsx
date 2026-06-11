@@ -34,6 +34,7 @@ export function ArticleListItem({ article, isNew, style }: Props): React.ReactEl
         </div>
         <p className="truncate font-meta text-[11px] text-mutedink">{metaLine}</p>
         <div className="flex items-center gap-1.5 overflow-hidden whitespace-nowrap">
+          {article.collection === 'papers' ? <Badge className="border-[var(--accent)] text-[var(--accent)]">paper</Badge> : null}
           {isNew ? <Badge className="border-[var(--positive)] text-[var(--positive)]">new</Badge> : null}
           {priority > 0 ? <Badge className="border-amber-600/60 text-amber-700 dark:border-amber-400/60 dark:text-amber-300">prio {priority}</Badge> : null}
           {duplicateCount > 0 ? (

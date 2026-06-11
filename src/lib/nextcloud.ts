@@ -4,12 +4,18 @@ import { createClient, type FileStat, type WebDAVClient } from 'webdav';
 
 import { parseArticle } from '@/lib/frontmatter';
 import { encodeArticleId } from '@/lib/ids';
-import type { Article, ArticleSummary } from '@/types/article';
+import type { Article, ArticleCollection, ArticleSummary } from '@/types/article';
 
 let client: WebDAVClient | null = null;
 
 export function getBasePath(): string {
   return process.env.NEXTCLOUD_BASE_PATH || '/Workstation/Projects/maths/00_inbox/reader-pipeline/';
+}
+
+/** Optional second folder for starred arXiv papers; null when not configured. */
+export function getPapersPath(): string | null {
+  const value = process.env.NEXTCLOUD_PAPERS_PATH?.trim();
+  return value ? value : null;
 }
 
 export function getNextcloudClient(): WebDAVClient {
@@ -74,17 +80,33 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return results;
 }
 
-export async function listArticleSummaries(basePath = getBasePath()): Promise<ArticleSummary[]> {
-  const files = await listMarkdownFiles(basePath);
-  const present = new Set(files.map((file) => file.filename));
+interface ListedFile {
+  file: FileStat;
+  collection?: ArticleCollection;
+}
 
+export async function listArticleSummaries(): Promise<ArticleSummary[]> {
+  const entries: ListedFile[] = (await listMarkdownFiles(getBasePath())).map((file) => ({ file }));
+
+  // The papers folder is optional and must never break the main listing.
+  const papersPath = getPapersPath();
+  if (papersPath) {
+    try {
+      const papers = await listMarkdownFiles(papersPath);
+      for (const file of papers) entries.push({ file, collection: 'papers' });
+    } catch (error) {
+      console.warn(`Skipping papers folder ${papersPath}: ${errorMessage(error)}`);
+    }
+  }
+
+  const present = new Set(entries.map((entry) => entry.file.filename));
   for (const key of summaryCache.keys()) {
     if (!present.has(key)) summaryCache.delete(key);
   }
 
-  const summaries = await mapWithConcurrency<FileStat, ArticleSummary | null>(files, CONCURRENCY, async (file) => {
+  const summaries = await mapWithConcurrency<ListedFile, ArticleSummary | null>(entries, CONCURRENCY, async ({ file, collection }) => {
     const cached = freshFromCache(file);
-    if (cached) return cached;
+    if (cached) return collection && cached.collection !== collection ? { ...cached, collection } : cached;
 
     try {
       const raw = await getArticleRaw(file.filename);
@@ -95,6 +117,7 @@ export async function listArticleSummaries(basePath = getBasePath()): Promise<Ar
         etag: file.etag ?? undefined,
         lastModified: file.lastmod,
         size: file.size,
+        collection,
         frontmatter: parsed.frontmatter
       };
       summaryCache.set(file.filename, {
@@ -108,6 +131,7 @@ export async function listArticleSummaries(basePath = getBasePath()): Promise<Ar
           etag: summary.etag,
           lastModified: summary.lastModified,
           size: summary.size,
+          collection,
           frontmatter: parsed.frontmatter,
           body: parsed.body,
           raw
@@ -146,6 +170,7 @@ export async function getArticle(path: string): Promise<Article> {
       etag: cached.etag,
       lastModified: cached.lastmod,
       size: cached.size,
+      collection: cached.summary.collection,
       frontmatter: parsed.frontmatter
     };
   }

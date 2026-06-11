@@ -24,7 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { flushPendingQueues, queueHighlight, queueNote, queueRating, saveArticle, updateCachedBody, updateCachedNote, updateCachedRating } from '@/lib/cache';
 import { arxivAbsUrl, arxivPdfUrl, buildBibtex, buildPlainCitation, normalizeArxivId } from '@/lib/citation';
-import { estimateReadingMinutes, filterAndSortArticles, nextUnratedAfter, priorityValue } from '@/lib/filters';
+import { applyPapersVisibility, estimateReadingMinutes, filterAndSortArticles, nextUnratedAfter, priorityValue } from '@/lib/filters';
 import { highlightFirstOccurrence, removeHighlightInBody } from '@/lib/frontmatter';
 import { buildObsidianUri, slugifyHeading } from '@/lib/obsidian';
 import { appendSyncLog } from '@/lib/syncLog';
@@ -59,6 +59,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const setLastArticleId = useArticleStore((state) => state.setLastArticleId);
   const setArticleScrollPosition = useArticleStore((state) => state.setArticleScrollPosition);
   const pinPriorityOnTop = usePreferencesStore((state) => state.pinPriorityOnTop);
+  const papersVisibility = usePreferencesStore((state) => state.papersVisibility);
   const fontSize = usePreferencesStore((state) => state.fontSize);
   const showReadingProgress = usePreferencesStore((state) => state.showReadingProgress);
   const obsidianVault = usePreferencesStore((state) => state.obsidianVault);
@@ -72,8 +73,8 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const noteDraftRef = useRef(noteDraft);
   const readingMinutes = useMemo(() => estimateReadingMinutes(article.body), [article.body]);
   const ordered = useMemo(
-    () => filterAndSortArticles(articles, filters, { pinPriorityOnTop }),
-    [articles, filters, pinPriorityOnTop]
+    () => filterAndSortArticles(applyPapersVisibility(articles, papersVisibility), filters, { pinPriorityOnTop }),
+    [articles, filters, pinPriorityOnTop, papersVisibility]
   );
   const currentIndex = ordered.findIndex((item) => item.id === article.id);
   const previous = currentIndex > 0 ? ordered[currentIndex - 1] : undefined;

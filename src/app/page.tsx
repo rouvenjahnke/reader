@@ -9,7 +9,7 @@ import { FixedSizeList, type ListChildComponentProps } from 'react-window';
 import { ArticleListItem } from '@/components/ArticleListItem';
 import { FilterBar, type FilterBarMeta } from '@/components/FilterBar';
 import { flushPendingQueues, getAllCachedBodies, pendingQueueDepth } from '@/lib/cache';
-import { dedupeArticles, filterAndSortArticles } from '@/lib/filters';
+import { applyPapersVisibility, dedupeArticles, filterAndSortArticles } from '@/lib/filters';
 import { prefetchArticleBodies, type PrefetchProgress } from '@/lib/prefetch';
 import { fetchArticleSummaries, loadCachedSummaries } from '@/lib/sync';
 import { useArticleStore } from '@/stores/useArticleStore';
@@ -29,6 +29,7 @@ export default function HomePage(): React.ReactElement {
   const noteSessionNew = useArticleStore((state) => state.noteSessionNew);
   const lastArticleId = useArticleStore((state) => state.lastArticleId);
   const pinPriorityOnTop = usePreferencesStore((state) => state.pinPriorityOnTop);
+  const papersVisibility = usePreferencesStore((state) => state.papersVisibility);
   const autoSyncOnOpen = usePreferencesStore((state) => state.autoSyncOnOpen);
   const bodyPrefetch = usePreferencesStore((state) => state.bodyPrefetch);
   const syncIntervalMinutes = usePreferencesStore((state) => state.syncIntervalMinutes);
@@ -45,7 +46,12 @@ export default function HomePage(): React.ReactElement {
 
   const sessionNewSet = useMemo(() => new Set(sessionNewIds), [sessionNewIds]);
 
-  const dedup = useMemo(() => dedupeArticles(articles, { showDuplicates: filters.showDuplicates }), [articles, filters.showDuplicates]);
+  const visibleArticles = useMemo(() => applyPapersVisibility(articles, papersVisibility), [articles, papersVisibility]);
+
+  const dedup = useMemo(
+    () => dedupeArticles(visibleArticles, { showDuplicates: filters.showDuplicates }),
+    [visibleArticles, filters.showDuplicates]
+  );
 
   const filteredSummaries = useMemo(
     () => filterAndSortArticles(dedup.visible, filters, { pinPriorityOnTop }),
@@ -204,7 +210,7 @@ export default function HomePage(): React.ReactElement {
 
   return (
     <main className="min-h-screen">
-      <FilterBar articles={articles} onRefresh={() => void refresh(false)} meta={meta} />
+      <FilterBar articles={visibleArticles} onRefresh={() => void refresh(false)} meta={meta} />
       <section className="mx-auto max-w-[720px] py-3">
         {!hydrated ? <p className="px-4 pb-2 font-meta text-xs text-mutedink">Loading…</p> : null}
         {showContinueReading && lastArticle ? (

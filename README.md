@@ -21,9 +21,13 @@ NEXTCLOUD_URL=https://nextcloud.example.com/remote.php/dav/files/<user>
 NEXTCLOUD_USERNAME=<user>
 NEXTCLOUD_APP_PASSWORD=<app-password>
 NEXTCLOUD_BASE_PATH=/Workstation/Projects/maths/00_inbox/reader-pipeline/
+# optional: zweiter Ordner mit gesternten arXiv-Papern
+NEXTCLOUD_PAPERS_PATH=/Workstation/Projects/maths/00_inbox/papers/
 ```
 
 Alle WebDAV-Zugriffe laufen serverseitig über die Next.js API-Routes. Das Frontend bekommt keine Nextcloud-Credentials.
+
+Ist `NEXTCLOUD_PAPERS_PATH` gesetzt, erscheinen die Markdown-Dateien aus diesem Ordner zusätzlich in der App — mit »paper«-Badge in der Liste und einem »Papers«-Chip in der Filterleiste. Unter Settings → Papers folder lässt sich wählen: gemischt anzeigen, nur Paper, oder ganz ausblenden (auch bei gesetztem Pfad).
 
 ## Ansichten
 
@@ -31,7 +35,7 @@ Alle WebDAV-Zugriffe laufen serverseitig über die Next.js API-Routes. Das Front
 - **Triage** (`/triage`): ein unbewerteter Artikel nach dem anderen — Titel, Metadaten, Textvorschau. Bewerten mit `1`/`2`/`3`, Überspringen mit `→`, Fortschrittszähler.
 - **Library** (`/library`): alle als relevant/high bewerteten Artikel, gruppierbar nach Monat, Tag oder Quelle, mit Filter.
 - **Reader** (`/article/[id]`): Inhaltsverzeichnis (`c`), Notiz pro Artikel (`n`, wird ins Frontmatter geschrieben), References & Tools (arXiv abs/PDF, BibTeX- und Zitat-Copy, Obsidian-Deep-Link), Lesefortschritt, Highlights.
-- **Settings** (`/settings`): Präferenzen, Obsidian-Vault-Konfiguration, Aktivitäts-Heatmap mit Streaks, Shortcut-Übersicht, Sync-Log.
+- **Settings** (`/settings`): Präferenzen, Obsidian-Vault-Konfiguration, Papers-Sichtbarkeit, Design-Auswahl (Preprint / Terminal / Legibility), Aktivitäts-Heatmap mit Streaks, Shortcut-Übersicht, Sync-Log.
 - **Command Palette** (`Ctrl/⌘ K`): Fuzzy-Suche über alle Artikel plus Navigations-, Filter-, Sync- und Theme-Befehle.
 
 ## Bedienung

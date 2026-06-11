@@ -90,13 +90,13 @@ describe('filters', () => {
     expect(nextUnratedAfter(articles, 'b')?.id).toBe('c');
   });
 
-  it('does not pin galois when pinGaloisOnTop=false', () => {
+  it('does not pin priority articles when pinPriorityOnTop=false', () => {
     expect(
-      filterAndSortArticles(articles, { ...baseFilters, statuses: ['unrated', 'relevant'] }, { pinGaloisOnTop: false }).map((article) => article.id)
+      filterAndSortArticles(articles, { ...baseFilters, statuses: ['unrated', 'relevant'] }, { pinPriorityOnTop: false }).map((article) => article.id)
     ).toEqual(['b', 'a', 'c']);
   });
 
-  it('pins galois by default even when sorted by newest', () => {
+  it('pins priority articles by default even when sorted by newest', () => {
     expect(
       filterAndSortArticles(articles, { ...baseFilters, statuses: ['unrated', 'relevant'] }).map((article) => article.id)
     ).toEqual(['c', 'b', 'a']);
@@ -104,7 +104,7 @@ describe('filters', () => {
 });
 
 describe('priorityValue', () => {
-  it('only honours reader_priority on galois source', () => {
+  it('honours reader_priority on every source', () => {
     const galois: ArticleSummary = { ...articles[2] };
     const nonGalois: ArticleSummary = {
       ...articles[2],
@@ -113,12 +113,12 @@ describe('priorityValue', () => {
       frontmatter: { ...articles[2].frontmatter, source: 'arXiv' }
     };
     expect(priorityValue(galois)).toBe(200);
-    expect(priorityValue(nonGalois)).toBe(0);
+    expect(priorityValue(nonGalois)).toBe(200);
     expect(isGalois(galois)).toBe(true);
     expect(isGalois(nonGalois)).toBe(false);
   });
 
-  it('treats reader_pinned as priority 100 only for galois', () => {
+  it('treats reader_pinned as priority 100 regardless of source', () => {
     const pinnedGalois: ArticleSummary = {
       id: 'g1',
       path: '/g1.md',
@@ -130,7 +130,7 @@ describe('priorityValue', () => {
       frontmatter: { title: 'x', source: 'arXiv', reader_pinned: true }
     };
     expect(priorityValue(pinnedGalois)).toBe(100);
-    expect(priorityValue(pinnedOther)).toBe(0);
+    expect(priorityValue(pinnedOther)).toBe(100);
   });
 });
 

@@ -28,7 +28,7 @@ export default function HomePage(): React.ReactElement {
   const hydrateArticles = useArticleStore((state) => state.hydrateArticles);
   const noteSessionNew = useArticleStore((state) => state.noteSessionNew);
   const lastArticleId = useArticleStore((state) => state.lastArticleId);
-  const pinGaloisOnTop = usePreferencesStore((state) => state.pinGaloisOnTop);
+  const pinPriorityOnTop = usePreferencesStore((state) => state.pinPriorityOnTop);
   const autoSyncOnOpen = usePreferencesStore((state) => state.autoSyncOnOpen);
   const bodyPrefetch = usePreferencesStore((state) => state.bodyPrefetch);
   const syncIntervalMinutes = usePreferencesStore((state) => state.syncIntervalMinutes);
@@ -48,8 +48,8 @@ export default function HomePage(): React.ReactElement {
   const dedup = useMemo(() => dedupeArticles(articles, { showDuplicates: filters.showDuplicates }), [articles, filters.showDuplicates]);
 
   const filteredSummaries = useMemo(
-    () => filterAndSortArticles(dedup.visible, filters, { pinGaloisOnTop }),
-    [dedup.visible, filters, pinGaloisOnTop]
+    () => filterAndSortArticles(dedup.visible, filters, { pinPriorityOnTop }),
+    [dedup.visible, filters, pinPriorityOnTop]
   );
 
   // If the query matches body content but no frontmatter hit, inject those entries.

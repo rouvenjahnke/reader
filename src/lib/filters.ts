@@ -4,7 +4,7 @@ import type { ArticleFilters, ArticleSummary, ReaderStatus } from '@/types/artic
 
 const defaultStatuses: ReaderStatus[] = ['unrated'];
 
-/** The single source whose reader_priority/reader_pinned still bubbles to the top. */
+/** Source name behind the "Galois" quick filter chip. */
 export const PRIORITY_SOURCE = 'galois';
 
 export const defaultFilters: ArticleFilters = {
@@ -19,7 +19,7 @@ export const defaultFilters: ArticleFilters = {
 };
 
 export interface SortPreferences {
-  pinGaloisOnTop?: boolean;
+  pinPriorityOnTop?: boolean;
 }
 
 const DAY_MS = 86_400_000;
@@ -28,7 +28,7 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
   const activeStatuses = filters.statuses.length > 0 ? filters.statuses : defaultStatuses;
   const activeSources = new Set(filters.sources);
   const activeTags = new Set(filters.tags ?? []);
-  const pinGalois = prefs.pinGaloisOnTop ?? true;
+  const pinPriority = prefs.pinPriorityOnTop ?? true;
   const newCutoff = Date.now() - DAY_MS;
 
   let result = articles.filter((article) => {
@@ -52,7 +52,7 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
   }
 
   return [...result].sort((a, b) => {
-    if (pinGalois) {
+    if (pinPriority) {
       const priorityDelta = priorityValue(b) - priorityValue(a);
       if (priorityDelta !== 0) return priorityDelta;
     }
@@ -85,11 +85,10 @@ export function nextUnratedAfter(articles: ArticleSummary[], currentId: string):
 }
 
 /**
- * Priority only applies to the configured `galois` source. Other sources always
- * return 0, regardless of any `reader_priority` / `reader_pinned` they may carry.
+ * Priority applies to every source: the categorization workflow decides which
+ * articles carry `reader_priority` / `reader_pinned`, not the app.
  */
 export function priorityValue(article: ArticleSummary): number {
-  if (!isGalois(article)) return 0;
   if (typeof article.frontmatter.reader_priority === 'number') return article.frontmatter.reader_priority;
   if (article.frontmatter.reader_pinned === true) return 100;
   return 0;

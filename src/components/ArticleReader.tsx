@@ -58,7 +58,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const updateSummary = useArticleStore((state) => state.updateSummary);
   const setLastArticleId = useArticleStore((state) => state.setLastArticleId);
   const setArticleScrollPosition = useArticleStore((state) => state.setArticleScrollPosition);
-  const pinGaloisOnTop = usePreferencesStore((state) => state.pinGaloisOnTop);
+  const pinPriorityOnTop = usePreferencesStore((state) => state.pinPriorityOnTop);
   const fontSize = usePreferencesStore((state) => state.fontSize);
   const showReadingProgress = usePreferencesStore((state) => state.showReadingProgress);
   const obsidianVault = usePreferencesStore((state) => state.obsidianVault);
@@ -72,8 +72,8 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const noteDraftRef = useRef(noteDraft);
   const readingMinutes = useMemo(() => estimateReadingMinutes(article.body), [article.body]);
   const ordered = useMemo(
-    () => filterAndSortArticles(articles, filters, { pinGaloisOnTop }),
-    [articles, filters, pinGaloisOnTop]
+    () => filterAndSortArticles(articles, filters, { pinPriorityOnTop }),
+    [articles, filters, pinPriorityOnTop]
   );
   const currentIndex = ordered.findIndex((item) => item.id === article.id);
   const previous = currentIndex > 0 ? ordered[currentIndex - 1] : undefined;

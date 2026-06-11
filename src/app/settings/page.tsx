@@ -96,10 +96,10 @@ export default function SettingsPage(): React.ReactElement {
         <h2 className="theorem-label text-mutedink">Reading</h2>
 
         <ToggleRow
-          label="Pin Galois on top"
-          description="Priority (reader_priority / reader_pinned) is honoured only for source = galois. Other sources sort normally."
-          checked={prefs.pinGaloisOnTop}
-          onChange={(value) => prefs.setPreference('pinGaloisOnTop', value)}
+          label="Pin priority on top"
+          description="Articles with reader_priority / reader_pinned in their frontmatter sort to the top, regardless of source."
+          checked={prefs.pinPriorityOnTop}
+          onChange={(value) => prefs.setPreference('pinPriorityOnTop', value)}
         />
 
         <ToggleRow

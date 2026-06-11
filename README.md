@@ -40,7 +40,7 @@ Alle WebDAV-Zugriffe laufen serverseitig über die Next.js API-Routes. Das Front
 - `1`, `2`, `3` bewerten als irrelevant, relevant, high relevant — in Liste, Reader und Triage.
 - Text im Reader markieren und `Markieren` tippen. Die App schreibt den Treffer als Obsidian/Markdown-Highlight `==markierter Text==` zurück in die Markdown-Datei.
 - Notizen werden als `reader_note` ins Frontmatter geschrieben; offline erfasste Notizen, Ratings und Highlights landen in einer Pending-Queue und werden beim nächsten Online-Kontakt synchronisiert.
-- Optionales Frontmatter für bewusst vorgemerkte Artikel: `reader_priority: 200` oder `reader_pinned: true` (wird nur für `source: galois` priorisiert).
+- Optionales Frontmatter für bewusst vorgemerkte Artikel: `reader_priority: 200` oder `reader_pinned: true` — wird quellenunabhängig nach oben sortiert (abschaltbar unter Settings → »Pin priority on top«).
 
 ### Tastaturkürzel
 

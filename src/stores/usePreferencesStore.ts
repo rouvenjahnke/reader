@@ -8,7 +8,7 @@ import type { ArticleSortMode, ReaderStatus } from '@/types/article';
 export type FontSize = 'S' | 'M' | 'L' | 'XL';
 
 export interface ReaderPreferences {
-  pinGaloisOnTop: boolean;
+  pinPriorityOnTop: boolean;
   autoSyncOnOpen: boolean;
   bodyPrefetch: boolean;
   syncIntervalMinutes: number;
@@ -27,7 +27,7 @@ export interface ReaderPreferences {
 }
 
 export const defaultPreferences: ReaderPreferences = {
-  pinGaloisOnTop: true,
+  pinPriorityOnTop: true,
   autoSyncOnOpen: true,
   bodyPrefetch: true,
   syncIntervalMinutes: 30,
@@ -55,7 +55,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
     }),
     {
       name: 'reader-preferences',
-      version: 3,
+      version: 4,
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Record<string, unknown>;
         if (version < 2) {
@@ -66,6 +66,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
           delete state.pinPriorityOnTop;
         }
         // v2 → v3: obsidianVault / obsidianPipelinePath added; defaults fill in.
+        if (version < 4) {
+          // v3 → v4: priority applies to all sources again; rename back to pinPriorityOnTop.
+          if (typeof state.pinGaloisOnTop === 'boolean' && typeof state.pinPriorityOnTop === 'undefined') {
+            state.pinPriorityOnTop = state.pinGaloisOnTop;
+          }
+          delete state.pinGaloisOnTop;
+        }
         return state as never;
       }
     }

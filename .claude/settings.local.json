@@ -6,7 +6,11 @@
       "Bash(npm test *)",
       "Bash(npm run *)",
       "Bash(git add *)",
-      "Bash(git commit -m 'feat: notes persistence, citation export, and obsidian deep-link libraries *)"
+      "Bash(git commit -m 'feat: notes persistence, citation export, and obsidian deep-link libraries *)",
+      "Bash(/usr/bin/time -v npm run build)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=1024\" /usr/bin/time -v npm run build)",
+      "Bash(git commit -m 'fix: cap node heap in docker build to survive low-memory hosts *)",
+      "Bash(git push *)"
     ]
   }
 }

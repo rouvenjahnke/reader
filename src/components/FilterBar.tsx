@@ -38,6 +38,8 @@ interface Props {
 export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElement {
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
+  const [sourceQuery, setSourceQuery] = useState('');
+  const [tagQuery, setTagQuery] = useState('');
   const filters = useArticleStore((state) => state.filters);
   const setSortMode = useArticleStore((state) => state.setSortMode);
   const setQuery = useArticleStore((state) => state.setQuery);
@@ -49,6 +51,8 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
   const toggleTag = useArticleStore((state) => state.toggleTag);
   const sources = collectSources(articles);
   const tags = collectTags(articles);
+  const filteredSources = filterOptions(sources, sourceQuery);
+  const filteredTags = filterOptions(tags, tagQuery);
   const selectedTags = filters.tags ?? [];
   const hasGalois = articles.some(isGalois);
   const papersVisibility = usePreferencesStore((state) => state.papersVisibility);
@@ -190,9 +194,18 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
         </div>
       </div>
       {sourcesOpen ? (
-        <FilterDialog title="Sources" count={sources.length} onClose={() => setSourcesOpen(false)}>
+        <FilterDialog
+          title="Sources"
+          count={sources.length}
+          visibleCount={filteredSources.length}
+          searchValue={sourceQuery}
+          searchPlaceholder="Search sources"
+          onSearchChange={setSourceQuery}
+          onClose={() => setSourcesOpen(false)}
+        >
           {sources.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No sources</p> : null}
-          {sources.map((source) => (
+          {sources.length > 0 && filteredSources.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No matching sources</p> : null}
+          {filteredSources.map((source) => (
             <label key={source} className="flex min-h-11 items-center gap-3 rounded-sm px-3 text-sm hover:bg-surface-muted">
               <input type="checkbox" className="accent-[var(--accent)]" checked={filters.sources.includes(source)} onChange={() => toggleSource(source)} />
               <span className="min-w-0 flex-1 truncate">{source}</span>
@@ -201,9 +214,18 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
         </FilterDialog>
       ) : null}
       {tagsOpen ? (
-        <FilterDialog title="Tags" count={tags.length} onClose={() => setTagsOpen(false)}>
+        <FilterDialog
+          title="Tags"
+          count={tags.length}
+          visibleCount={filteredTags.length}
+          searchValue={tagQuery}
+          searchPlaceholder="Search tags"
+          onSearchChange={setTagQuery}
+          onClose={() => setTagsOpen(false)}
+        >
           {tags.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No tags</p> : null}
-          {tags.map((tag) => (
+          {tags.length > 0 && filteredTags.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No matching tags</p> : null}
+          {filteredTags.map((tag) => (
             <label key={tag} className="flex min-h-11 items-center gap-3 rounded-sm px-3 text-sm hover:bg-surface-muted">
               <input type="checkbox" className="accent-[var(--accent)]" checked={selectedTags.includes(tag)} onChange={() => toggleTag(tag)} />
               <span className="min-w-0 flex-1 truncate">{tag}</span>
@@ -218,11 +240,19 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
 function FilterDialog({
   title,
   count,
+  visibleCount,
+  searchValue,
+  searchPlaceholder,
+  onSearchChange,
   onClose,
   children
 }: {
   title: string;
   count: number;
+  visibleCount: number;
+  searchValue: string;
+  searchPlaceholder: string;
+  onSearchChange: (value: string) => void;
   onClose: () => void;
   children: React.ReactNode;
 }): React.ReactElement {
@@ -233,16 +263,34 @@ function FilterDialog({
         <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
           <div>
             <h2 className="font-heading text-base font-bold">{title}</h2>
-            <p className="font-meta text-[11px] text-mutedink">{count} available</p>
+            <p className="font-meta text-[11px] text-mutedink">
+              {count} available{searchValue.trim() ? ` · ${visibleCount} shown` : ''}
+            </p>
           </div>
           <Button type="button" size="icon" variant="ghost" onClick={onClose} aria-label="Close">
             <X className="h-4 w-4" />
           </Button>
         </div>
+        <div className="border-b border-hairline p-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mutedink" />
+            <Input className="h-9 pl-9" placeholder={searchPlaceholder} value={searchValue} onChange={(event) => onSearchChange(event.target.value)} />
+          </div>
+        </div>
         <div className="overflow-y-auto p-2">{children}</div>
       </div>
     </div>
   );
+}
+
+function filterOptions(options: string[], query: string): string[] {
+  const needle = normalizeFilterSearch(query);
+  if (!needle) return options;
+  return options.filter((option) => normalizeFilterSearch(option).includes(needle));
+}
+
+function normalizeFilterSearch(value: string): string {
+  return value.trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
 }
 
 function SyncStatusLine({ meta }: { meta: FilterBarMeta }): React.ReactElement | null {

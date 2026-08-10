@@ -23,6 +23,7 @@ export interface SortPreferences {
 }
 
 const DAY_MS = 86_400_000;
+const PINNED_FILTER_OPTIONS = ['mathematics', 'machine learning'];
 
 export function filterAndSortArticles(articles: ArticleSummary[], filters: ArticleFilters, prefs: SortPreferences = {}): ArticleSummary[] {
   const activeStatuses = filters.statuses.length > 0 ? filters.statuses : defaultStatuses;
@@ -77,15 +78,31 @@ export function applyPapersVisibility(articles: ArticleSummary[], visibility: Pa
 }
 
 export function collectSources(articles: ArticleSummary[]): string[] {
-  return Array.from(new Set(articles.map((article) => article.frontmatter.source).filter((source): source is string => Boolean(source)))).sort((a, b) =>
-    a.localeCompare(b, 'de')
+  return Array.from(new Set(articles.map((article) => article.frontmatter.source).filter((source): source is string => Boolean(source)))).sort(
+    compareFilterOption
   );
 }
 
 export function collectTags(articles: ArticleSummary[]): string[] {
-  return Array.from(new Set(articles.flatMap((article) => article.frontmatter.tags ?? []).filter((tag) => tag.trim().length > 0))).sort((a, b) =>
-    a.localeCompare(b, 'de')
+  return Array.from(new Set(articles.flatMap((article) => article.frontmatter.tags ?? []).filter((tag) => tag.trim().length > 0))).sort(
+    compareFilterOption
   );
+}
+
+function compareFilterOption(a: string, b: string): number {
+  const pinnedDelta = pinnedFilterRank(a) - pinnedFilterRank(b);
+  if (pinnedDelta !== 0) return pinnedDelta;
+  return a.localeCompare(b, 'de');
+}
+
+function pinnedFilterRank(value: string): number {
+  const normalized = normalizeFilterOption(value);
+  const index = PINNED_FILTER_OPTIONS.indexOf(normalized);
+  return index === -1 ? PINNED_FILTER_OPTIONS.length : index;
+}
+
+function normalizeFilterOption(value: string): string {
+  return value.trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
 }
 
 export function nextUnratedAfter(articles: ArticleSummary[], currentId: string): ArticleSummary | undefined {

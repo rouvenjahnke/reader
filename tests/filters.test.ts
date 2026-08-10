@@ -92,6 +92,18 @@ describe('filters', () => {
     expect(collectTags(articles)).toEqual(['ai', 'capture', 'math']);
   });
 
+  it('pins mathematics and machine learning filter options', () => {
+    const input: ArticleSummary[] = [
+      { id: 'math', path: '/math.md', frontmatter: { title: 'Math', source: 'Mathematics', tags: ['mathematics'] } },
+      { id: 'zeta', path: '/zeta.md', frontmatter: { title: 'Zeta', source: 'Zeta', tags: ['zeta'] } },
+      { id: 'ml', path: '/ml.md', frontmatter: { title: 'ML', source: 'machine learning', tags: ['machine-learning'] } },
+      { id: 'ai', path: '/ai.md', frontmatter: { title: 'AI', source: 'AI', tags: ['ai'] } }
+    ];
+
+    expect(collectSources(input)).toEqual(['Mathematics', 'machine learning', 'AI', 'Zeta']);
+    expect(collectTags(input)).toEqual(['mathematics', 'machine-learning', 'ai', 'zeta']);
+  });
+
   it('galoisOnly filter restricts to galois source', () => {
     expect(filterAndSortArticles(articles, { ...baseFilters, statuses: ['unrated', 'relevant'], galoisOnly: true }).map((article) => article.id)).toEqual(['c']);
   });

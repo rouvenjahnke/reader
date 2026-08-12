@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCheck, CircleOff, Clock, Command, Layers, LibraryBig, ListChecks, RefreshCw, Search, Settings, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+import { CheckCheck, ChevronDown, ChevronUp, CircleOff, Clock, Command, Layers, LibraryBig, ListChecks, RefreshCw, Search, Settings, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -38,6 +38,7 @@ interface Props {
 }
 
 export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElement {
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [foldersOpen, setFoldersOpen] = useState(false);
@@ -75,7 +76,7 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
   const allStatusesSelected = allStatuses.every((status) => filters.statuses.includes(status));
 
   return (
-    <div className="reader-surface-bar sticky top-0 z-20 border-b px-3 py-3 text-ink shadow-[0_1px_0_var(--border)]">
+    <div className="reader-surface-bar sticky top-0 z-20 border-b px-2 py-2 text-ink shadow-[0_1px_0_var(--border)] sm:px-3 sm:py-3">
       <div className="mx-auto flex max-w-[880px] flex-col gap-2.5">
         <div className="flex items-center gap-2">
           <span className="hidden select-none font-heading text-lg font-bold italic sm:block" aria-hidden="true">
@@ -102,12 +103,26 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           >
             <Command className="h-4 w-4" />
           </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant={hasActiveFilters ? 'default' : 'secondary'}
+            onClick={() => setMobileFiltersOpen((open) => !open)}
+            aria-label={mobileFiltersOpen ? 'Hide filters' : 'Show filters'}
+            aria-expanded={mobileFiltersOpen}
+            aria-controls="mobile-filter-controls"
+            className="relative sm:hidden"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            {mobileFiltersOpen ? <ChevronUp className="absolute right-1 top-1 h-3 w-3" /> : <ChevronDown className="absolute right-1 top-1 h-3 w-3" />}
+            {hasActiveFilters ? <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" /> : null}
+          </Button>
           <Button type="button" size="icon" variant="secondary" onClick={onRefresh} disabled={meta.syncing} aria-label="Sync">
             <RefreshCw className={`h-4 w-4 ${meta.syncing ? 'animate-spin' : ''}`} />
           </Button>
           <Link
             href="/triage"
-            className="relative inline-flex h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted"
+            className="relative hidden h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted sm:inline-flex"
             aria-label="Triage mode"
             title="Triage unrated articles (t)"
           >
@@ -120,7 +135,7 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           </Link>
           <Link
             href="/library"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted"
+            className="hidden h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted sm:inline-flex"
             aria-label="Library"
             title="Library of rated articles (b)"
           >
@@ -128,12 +143,39 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           </Link>
           <Link
             href="/settings"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted"
+            className="hidden h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted sm:inline-flex"
             aria-label="Settings"
           >
             <Settings className="h-4 w-4" />
           </Link>
         </div>
+
+        <div
+          id="mobile-filter-controls"
+          className={`${mobileFiltersOpen ? 'flex' : 'hidden'} max-h-[calc(100dvh-4.75rem)] flex-col gap-2.5 overflow-y-auto overscroll-contain sm:flex sm:max-h-none sm:overflow-visible`}
+        >
+          <div className="flex items-center gap-2 border-t border-hairline pt-2 sm:hidden">
+            <Link
+              href="/triage"
+              className="relative inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-sm border border-hairline bg-surface px-2 text-sm font-medium text-ink transition hover:bg-surface-muted"
+            >
+              <ListChecks className="h-4 w-4" /> Triage
+              {meta.unratedCount > 0 ? <span className="font-meta text-[10px] text-mutedink">{meta.unratedCount > 99 ? '99+' : meta.unratedCount}</span> : null}
+            </Link>
+            <Link
+              href="/library"
+              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-sm border border-hairline bg-surface px-2 text-sm font-medium text-ink transition hover:bg-surface-muted"
+            >
+              <LibraryBig className="h-4 w-4" /> Library
+            </Link>
+            <Link
+              href="/settings"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted"
+              aria-label="Settings"
+            >
+              <Settings className="h-4 w-4" />
+            </Link>
+          </div>
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <SyncStatusLine meta={meta} />
@@ -262,6 +304,7 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
             </Button>
           ) : null}
           </div>
+        </div>
         </div>
       </div>
       {sourcesOpen ? (

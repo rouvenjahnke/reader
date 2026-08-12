@@ -12,6 +12,7 @@ import { createClient } from 'webdav';
 loadEnvironment();
 
 const { Client } = pg;
+const DEFAULT_WORKFLOW_NAME = 'Pipeline_Math_AI_Blogs';
 const TAO_PATTERN = /(?:terry|terence)\s+tao|what'?s new|mathstodon:\s*tao/i;
 const args = parseArgs(process.argv.slice(2));
 
@@ -30,7 +31,7 @@ const [database, nextcloud, reader, n8n] = await Promise.all([
   inspectDatabase(args.feedId, entryIds, urls),
   inspectNextcloud(entryIds, urls),
   inspectReader(entryIds, urls),
-  inspectN8n(entryIds, urls, workflow.result.workflowName)
+  inspectN8n(entryIds, urls, workflow.result.workflowName || DEFAULT_WORKFLOW_NAME)
 ]);
 
 const reconciled = reconcile(entries, args.feedId, database, nextcloud, reader, n8n);

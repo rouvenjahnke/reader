@@ -134,7 +134,7 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
 
         <div className="flex gap-2 overflow-x-auto pb-1">
           <Button type="button" size="sm" variant={filters.sortMode === 'newest' ? 'default' : 'secondary'} onClick={() => setSortMode('newest')}>
-            Newest
+            Added
           </Button>
           <Button type="button" size="sm" variant={filters.sortMode === 'score' ? 'default' : 'secondary'} onClick={() => setSortMode('score')}>
             Score

@@ -18,7 +18,7 @@ export function ArticleListItem({ article, isNew, style }: Props): React.ReactEl
   const priority = priorityValue(article);
   const duplicateCount = article.duplicates?.length ?? 0;
 
-  const metaLine = [fm.source, fm.author, relativeDate(fm.published ?? fm.fetched ?? article.lastModified)].filter(Boolean).join(' · ');
+  const metaLine = [fm.source, fm.author, relativeDate(article.firstSeenAt ?? fm.fetched ?? article.lastModified ?? fm.published)].filter(Boolean).join(' · ');
 
   return (
     <div style={style} className="px-4">

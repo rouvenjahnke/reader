@@ -66,7 +66,10 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
       if (scoreDelta !== 0) return scoreDelta;
     }
 
-    return dateValue(b.frontmatter.published ?? b.frontmatter.fetched ?? b.lastModified) - dateValue(a.frontmatter.published ?? a.frontmatter.fetched ?? a.lastModified);
+    const addedDelta = addedDateValue(b) - addedDateValue(a);
+    if (addedDelta !== 0) return addedDelta;
+
+    return publishedDateValue(b) - publishedDateValue(a);
   });
 }
 
@@ -153,10 +156,29 @@ function dateValue(value: string | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function addedDateValue(article: ArticleSummary): number {
+  return dateValue(article.firstSeenAt ?? article.frontmatter.fetched ?? article.lastModified ?? article.frontmatter.published);
+}
+
+function publishedDateValue(article: ArticleSummary): number {
+  return dateValue(article.frontmatter.published ?? article.frontmatter.fetched ?? article.lastModified);
+}
+
 // ─── Deduplication ────────────────────────────────────────────────────────────
 
 interface DedupResult {
   visible: ArticleSummary[];
+  duplicateCount: number;
+}
+
+interface DedupBucket {
+  firstIndex: number;
+  articles: ArticleSummary[];
+}
+
+interface DedupUnit {
+  firstIndex: number;
+  articles: ArticleSummary[];
   duplicateCount: number;
 }
 
@@ -167,45 +189,41 @@ interface DedupResult {
  * can inspect them directly.
  */
 export function dedupeArticles(articles: ArticleSummary[], options: { showDuplicates?: boolean } = {}): DedupResult {
-  const groups = new Map<string, ArticleSummary[]>();
-  const ungrouped: ArticleSummary[] = [];
+  const groups = new Map<string, DedupBucket>();
+  const units: DedupUnit[] = [];
 
-  for (const article of articles) {
+  for (let index = 0; index < articles.length; index += 1) {
+    const article = articles[index];
     const key = dedupKey(article);
     if (!key) {
-      ungrouped.push(article);
+      units.push({ firstIndex: index, articles: [article], duplicateCount: 0 });
       continue;
     }
     const bucket = groups.get(key);
-    if (bucket) bucket.push(article);
-    else groups.set(key, [article]);
+    if (bucket) bucket.articles.push(article);
+    else groups.set(key, { firstIndex: index, articles: [article] });
   }
-
-  const winners: ArticleSummary[] = [];
-  let duplicateCount = 0;
 
   for (const bucket of groups.values()) {
-    if (bucket.length === 1) {
-      winners.push(bucket[0]);
+    if (bucket.articles.length === 1) {
+      units.push({ firstIndex: bucket.firstIndex, articles: [bucket.articles[0]], duplicateCount: 0 });
       continue;
     }
-    const sorted = [...bucket].sort(compareForDedup);
+    const sorted = [...bucket.articles].sort(compareForDedup);
     const winner = sorted[0];
     const losers = sorted.slice(1);
-    duplicateCount += losers.length;
-    winners.push({ ...winner, duplicates: losers });
+    units.push({
+      firstIndex: bucket.firstIndex,
+      articles: options.showDuplicates ? [{ ...winner, duplicates: losers }, ...losers] : [{ ...winner, duplicates: losers }],
+      duplicateCount: losers.length
+    });
   }
 
-  if (options.showDuplicates) {
-    const expanded: ArticleSummary[] = [];
-    for (const winner of winners) {
-      expanded.push(winner);
-      for (const dup of winner.duplicates ?? []) expanded.push(dup);
-    }
-    return { visible: [...ungrouped, ...expanded], duplicateCount };
-  }
-
-  return { visible: [...ungrouped, ...winners], duplicateCount };
+  units.sort((a, b) => a.firstIndex - b.firstIndex);
+  return {
+    visible: units.flatMap((unit) => unit.articles),
+    duplicateCount: units.reduce((sum, unit) => sum + unit.duplicateCount, 0)
+  };
 }
 
 function compareForDedup(a: ArticleSummary, b: ArticleSummary): number {
@@ -213,8 +231,7 @@ function compareForDedup(a: ArticleSummary, b: ArticleSummary): number {
   if (ratingDelta !== 0) return ratingDelta;
 
   const dateDelta =
-    dateValue(b.frontmatter.published ?? b.frontmatter.fetched ?? b.lastModified) -
-    dateValue(a.frontmatter.published ?? a.frontmatter.fetched ?? a.lastModified);
+    publishedDateValue(b) - publishedDateValue(a);
   if (dateDelta !== 0) return dateDelta;
 
   const scoreDelta = (b.frontmatter.score ?? 0) - (a.frontmatter.score ?? 0);

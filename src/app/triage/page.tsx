@@ -58,12 +58,13 @@ export default function TriagePage(): React.ReactElement {
 
   useEffect(() => {
     if (queueIds !== null || articles.length === 0) return;
-    const { visible } = dedupeArticles(applyPapersVisibility(articles, usePreferencesStore.getState().papersVisibility), {
+    const unratedInput = applyPapersVisibility(articles, usePreferencesStore.getState().papersVisibility).filter(
+      (article) => (article.frontmatter.reader_status ?? 'unrated') === 'unrated'
+    );
+    const { visible } = dedupeArticles(unratedInput, {
       showDuplicates: false
     });
-    const unrated = visible
-      .filter((article) => (article.frontmatter.reader_status ?? 'unrated') === 'unrated')
-      .map((article) => article.id);
+    const unrated = visible.map((article) => article.id);
     setQueueIds(unrated);
   }, [articles, queueIds]);
 

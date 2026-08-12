@@ -26,7 +26,7 @@ const papersOptions: Array<{ value: PapersVisibility; label: string }> = [
   { value: 'hidden', label: 'Hidden' }
 ];
 const sortModes: Array<{ value: ArticleSortMode; label: string }> = [
-  { value: 'newest', label: 'Newest' },
+  { value: 'newest', label: 'Added' },
   { value: 'score', label: 'Score' }
 ];
 const statusOptions: Array<{ value: ReaderStatus; label: string }> = [

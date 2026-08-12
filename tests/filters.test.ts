@@ -78,6 +78,33 @@ describe('filters', () => {
     expect(filterAndSortArticles(articles, { ...baseFilters, sortMode: 'score', statuses: ['unrated', 'relevant'] }).map((article) => article.id)).toEqual(['c', 'b', 'a']);
   });
 
+  it('sorts added-date mode by reader-added/fetched time before publication time', () => {
+    const input: ArticleSummary[] = [
+      {
+        id: 'old-published-new-fetch',
+        path: '/reader-pipeline/math_blogs/old.md',
+        frontmatter: {
+          title: 'Old publication imported today',
+          fetched: '2026-08-12T12:00:00.000Z',
+          published: '2023-01-01T00:00:00.000Z',
+          reader_status: 'unrated'
+        }
+      },
+      {
+        id: 'new-published-old-fetch',
+        path: '/reader-pipeline/math_blogs/new.md',
+        frontmatter: {
+          title: 'New publication imported earlier',
+          fetched: '2026-08-07T12:00:00.000Z',
+          published: '2026-08-11T00:00:00.000Z',
+          reader_status: 'unrated'
+        }
+      }
+    ];
+
+    expect(filterAndSortArticles(input, baseFilters).map((article) => article.id)).toEqual(['old-published-new-fetch', 'new-published-old-fetch']);
+  });
+
   it('filters with fuzzy search', () => {
     expect(filterAndSortArticles(articles, { ...baseFilters, statuses: ['unrated', 'relevant'], query: 'algebra' }).map((article) => article.id)).toEqual(['a']);
   });
@@ -153,7 +180,7 @@ describe('filters', () => {
     ).toEqual(['b', 'a', 'c']);
   });
 
-  it('pins priority articles by default even when sorted by newest', () => {
+  it('pins priority articles by default even when sorted by added date', () => {
     expect(
       filterAndSortArticles(articles, { ...baseFilters, statuses: ['unrated', 'relevant'] }).map((article) => article.id)
     ).toEqual(['c', 'b', 'a']);
@@ -256,6 +283,17 @@ describe('dedupeArticles', () => {
     const result = dedupeArticles(input, { showDuplicates: true });
     expect(result.visible).toHaveLength(2);
     expect(result.duplicateCount).toBe(1);
+  });
+
+  it('preserves input order when collapsing duplicates after filtering', () => {
+    const input: ArticleSummary[] = [
+      { id: 'first', path: '/first.md', frontmatter: { title: 'First unique', fetched: '2026-08-12T00:00:00.000Z' } },
+      { id: 'dup-old', path: '/dup-old.md', frontmatter: { title: 'Same duplicate', url: 'https://example.com/post', published: '2026-01-01' } },
+      { id: 'second', path: '/second.md', frontmatter: { title: 'Second unique', fetched: '2026-08-11T00:00:00.000Z' } },
+      { id: 'dup-new', path: '/dup-new.md', frontmatter: { title: 'Same duplicate', url: 'https://example.com/post', published: '2026-02-01' } }
+    ];
+    const result = dedupeArticles(input);
+    expect(result.visible.map((article) => article.id)).toEqual(['first', 'dup-new', 'second']);
   });
 });
 

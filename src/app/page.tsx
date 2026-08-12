@@ -48,9 +48,16 @@ export default function HomePage(): React.ReactElement {
 
   const visibleArticles = useMemo(() => applyPapersVisibility(articles, papersVisibility), [articles, papersVisibility]);
 
+  const scopedFilters = useMemo(() => ({ ...filters, query: '' }), [filters]);
+
+  const scopedArticles = useMemo(
+    () => filterAndSortArticles(visibleArticles, scopedFilters, { pinPriorityOnTop }),
+    [visibleArticles, scopedFilters, pinPriorityOnTop]
+  );
+
   const dedup = useMemo(
-    () => dedupeArticles(visibleArticles, { showDuplicates: filters.showDuplicates }),
-    [visibleArticles, filters.showDuplicates]
+    () => dedupeArticles(scopedArticles, { showDuplicates: filters.showDuplicates }),
+    [scopedArticles, filters.showDuplicates]
   );
 
   const filteredSummaries = useMemo(
@@ -71,8 +78,8 @@ export default function HomePage(): React.ReactElement {
   const lastArticle = useMemo(() => articles.find((article) => article.id === lastArticleId), [articles, lastArticleId]);
 
   const unratedCount = useMemo(
-    () => dedup.visible.filter((article) => (article.frontmatter.reader_status ?? 'unrated') === 'unrated').length,
-    [dedup.visible]
+    () => visibleArticles.filter((article) => (article.frontmatter.reader_status ?? 'unrated') === 'unrated').length,
+    [visibleArticles]
   );
 
   const refreshPending = async () => {

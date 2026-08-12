@@ -4,9 +4,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
+import dotenv from 'dotenv';
 import matter from 'gray-matter';
 import pg from 'pg';
 import { createClient } from 'webdav';
+
+loadEnvironment();
 
 const { Client } = pg;
 const TAO_PATTERN = /(?:terry|terence)\s+tao|what'?s new|mathstodon:\s*tao/i;
@@ -57,6 +60,16 @@ const output = path.resolve(args.output);
 await fs.mkdir(path.dirname(output), { recursive: true });
 await fs.writeFile(output, JSON.stringify(report, null, 2) + '\n', 'utf8');
 printSummary(report, output);
+
+function loadEnvironment() {
+  const loaded = [];
+  for (const [file, override] of [['.env', false], ['.env.debug', true]]) {
+    const result = dotenv.config({ path: file, override, quiet: true });
+    if (!result.error) loaded.push(file);
+  }
+  if (loaded.length > 0) console.log('Loaded environment: ' + loaded.join(', '));
+  else console.log('No .env or .env.debug found; using process environment only.');
+}
 
 function parseArgs(values) {
   const result = {

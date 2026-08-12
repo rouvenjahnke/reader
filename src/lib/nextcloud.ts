@@ -82,18 +82,20 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 
 interface ListedFile {
   file: FileStat;
+  basePath: string;
   collection?: ArticleCollection;
 }
 
 export async function listArticleSummaries(): Promise<ArticleSummary[]> {
-  const entries: ListedFile[] = (await listMarkdownFiles(getBasePath())).map((file) => ({ file }));
+  const basePath = getBasePath();
+  const entries: ListedFile[] = (await listMarkdownFiles(basePath)).map((file) => ({ file, basePath }));
 
   // The papers folder is optional and must never break the main listing.
   const papersPath = getPapersPath();
   if (papersPath) {
     try {
       const papers = await listMarkdownFiles(papersPath);
-      for (const file of papers) entries.push({ file, collection: 'papers' });
+      for (const file of papers) entries.push({ file, basePath: papersPath, collection: 'papers' });
     } catch (error) {
       console.warn(`Skipping papers folder ${papersPath}: ${errorMessage(error)}`);
     }
@@ -104,20 +106,44 @@ export async function listArticleSummaries(): Promise<ArticleSummary[]> {
     if (!present.has(key)) summaryCache.delete(key);
   }
 
-  const summaries = await mapWithConcurrency<ListedFile, ArticleSummary | null>(entries, CONCURRENCY, async ({ file, collection }) => {
+  const summaries = await mapWithConcurrency<ListedFile, ArticleSummary | null>(entries, CONCURRENCY, async ({ file, basePath, collection }) => {
     const cached = freshFromCache(file);
-    if (cached) return collection && cached.collection !== collection ? { ...cached, collection } : cached;
+    const pathMeta = articlePathMetadata(file.filename, basePath, collection);
+    if (cached) {
+      const resolvedCollection = collection ?? pathMeta.collection ?? cached.collection ?? collectionFromFrontmatter(cached.frontmatter.type);
+      const summary: ArticleSummary = {
+        ...cached,
+        ...pathMeta,
+        collection: resolvedCollection
+      };
+      const entry = summaryCache.get(file.filename);
+      if (entry) {
+        entry.summary = summary;
+        if (entry.article) {
+          entry.article = {
+            ...entry.article,
+            collection: resolvedCollection,
+            pipelineRelativePath: pathMeta.pipelineRelativePath,
+            pipelineFolder: pathMeta.pipelineFolder
+          };
+        }
+      }
+      return summary;
+    }
 
     try {
       const raw = await getArticleRaw(file.filename);
       const parsed = parseArticle(raw);
+      const resolvedCollection = collection ?? pathMeta.collection ?? collectionFromFrontmatter(parsed.frontmatter.type);
       const summary: ArticleSummary = {
         id: encodeArticleId(file.filename),
         path: file.filename,
         etag: file.etag ?? undefined,
         lastModified: file.lastmod,
         size: file.size,
-        collection,
+        collection: resolvedCollection,
+        pipelineRelativePath: pathMeta.pipelineRelativePath,
+        pipelineFolder: pathMeta.pipelineFolder,
         frontmatter: parsed.frontmatter
       };
       summaryCache.set(file.filename, {
@@ -131,7 +157,9 @@ export async function listArticleSummaries(): Promise<ArticleSummary[]> {
           etag: summary.etag,
           lastModified: summary.lastModified,
           size: summary.size,
-          collection,
+          collection: resolvedCollection,
+          pipelineRelativePath: pathMeta.pipelineRelativePath,
+          pipelineFolder: pathMeta.pipelineFolder,
           frontmatter: parsed.frontmatter,
           body: parsed.body,
           raw
@@ -153,10 +181,15 @@ export async function getArticle(path: string): Promise<Article> {
 
   const raw = await getArticleRaw(path);
   const parsed = parseArticle(raw);
+  const pathMeta = articlePathMetadata(path, basePathForArticle(path));
+  const collection = pathMeta.collection ?? collectionFromFrontmatter(parsed.frontmatter.type);
 
   const article: Article = {
     id: encodeArticleId(path),
     path,
+    collection,
+    pipelineRelativePath: pathMeta.pipelineRelativePath,
+    pipelineFolder: pathMeta.pipelineFolder,
     frontmatter: parsed.frontmatter,
     body: parsed.body,
     raw
@@ -170,7 +203,9 @@ export async function getArticle(path: string): Promise<Article> {
       etag: cached.etag,
       lastModified: cached.lastmod,
       size: cached.size,
-      collection: cached.summary.collection,
+      collection: cached.summary.collection ?? collection,
+      pipelineRelativePath: pathMeta.pipelineRelativePath,
+      pipelineFolder: pathMeta.pipelineFolder,
       frontmatter: parsed.frontmatter
     };
   }
@@ -214,4 +249,56 @@ function uniqueSummaries(summaries: ArticleSummary[]): ArticleSummary[] {
     seen.add(summary.id);
     return true;
   });
+}
+
+function articlePathMetadata(path: string, basePath: string, forcedCollection?: ArticleCollection): Pick<ArticleSummary, 'collection' | 'pipelineFolder' | 'pipelineRelativePath'> {
+  const relativePath = relativeToBasePath(path, basePath);
+  const segments = relativePath.split('/').filter(Boolean);
+  const pipelineFolder = segments.length > 1 ? segments[0] : undefined;
+  return {
+    collection: forcedCollection ?? collectionFromFolder(pipelineFolder),
+    pipelineFolder,
+    pipelineRelativePath: relativePath
+  };
+}
+
+function relativeToBasePath(path: string, basePath: string): string {
+  const normalizedPath = normalizeDavPath(path);
+  const normalizedBase = normalizeDavPath(basePath);
+  if (normalizedPath === normalizedBase) return '';
+  const prefix = normalizedBase.endsWith('/') ? normalizedBase : `${normalizedBase}/`;
+  return normalizedPath.startsWith(prefix) ? normalizedPath.slice(prefix.length) : normalizedPath.replace(/^\/+/, '');
+}
+
+function normalizeDavPath(path: string): string {
+  return `/${path.split('/').filter(Boolean).join('/')}`;
+}
+
+function basePathForArticle(path: string): string {
+  const papersPath = getPapersPath();
+  if (papersPath && pathIsBelowBase(path, papersPath)) return papersPath;
+  return getBasePath();
+}
+
+function pathIsBelowBase(path: string, basePath: string): boolean {
+  const normalizedPath = normalizeDavPath(path);
+  const normalizedBase = normalizeDavPath(basePath);
+  const prefix = normalizedBase.endsWith('/') ? normalizedBase : `${normalizedBase}/`;
+  return normalizedPath === normalizedBase || normalizedPath.startsWith(prefix);
+}
+
+function collectionFromFolder(folder: string | undefined): ArticleCollection | undefined {
+  if (!folder) return undefined;
+  const normalized = normalizeCollectionSignal(folder);
+  return normalized.includes('paper') || normalized.includes('preprint') ? 'papers' : undefined;
+}
+
+function collectionFromFrontmatter(type: unknown): ArticleCollection | undefined {
+  if (typeof type !== 'string') return undefined;
+  const normalized = normalizeCollectionSignal(type);
+  return normalized === 'paper' || normalized === 'preprint' ? 'papers' : undefined;
+}
+
+function normalizeCollectionSignal(value: string): string {
+  return value.trim().toLowerCase().replace(/[_-]+/g, ' ');
 }

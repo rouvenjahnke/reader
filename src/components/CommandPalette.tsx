@@ -64,7 +64,7 @@ export function CommandPalette(): React.ReactElement | null {
       new Fuse(articles, {
         threshold: 0.35,
         ignoreLocation: true,
-        keys: ['frontmatter.title', 'frontmatter.author', 'frontmatter.tags', 'frontmatter.source']
+        keys: ['frontmatter.title', 'frontmatter.author', 'frontmatter.tags', 'frontmatter.source', 'pipelineFolder', 'pipelineRelativePath', 'path']
       }),
     [articles]
   );
@@ -171,7 +171,7 @@ export function CommandPalette(): React.ReactElement | null {
               <PaletteRow key={article.id} active={itemIndex === activeIndex} onSelect={() => runItem(itemIndex)} onHover={() => setActiveIndex(itemIndex)}>
                 <FileText className="h-4 w-4 shrink-0 text-mutedink" />
                 <span className="min-w-0 flex-1 truncate text-sm">{article.frontmatter.title}</span>
-                <span className="theorem-label shrink-0 text-mutedink">{article.frontmatter.source ?? ''}</span>
+                <span className="theorem-label shrink-0 text-mutedink">{article.frontmatter.source ?? article.pipelineFolder ?? ''}</span>
               </PaletteRow>
             );
           })}

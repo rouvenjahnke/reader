@@ -26,6 +26,7 @@ interface ArticleStore {
   toggleStatus: (status: ReaderStatus) => void;
   toggleSource: (source: string) => void;
   toggleTag: (tag: string) => void;
+  toggleFolder: (folder: string) => void;
   resetFilters: (filters: ArticleFilters) => void;
   updateSummary: (article: ArticleSummary) => void;
   noteSessionNew: (ids: string[]) => void;
@@ -75,6 +76,13 @@ export const useArticleStore = create<ArticleStore>()(
           const nextTags = exists ? tags.filter((item) => item !== tag) : [...tags, tag];
           return { filters: { ...state.filters, tags: nextTags } };
         }),
+      toggleFolder: (folder) =>
+        set((state) => {
+          const folders = state.filters.folders ?? [];
+          const exists = folders.includes(folder);
+          const nextFolders = exists ? folders.filter((item) => item !== folder) : [...folders, folder];
+          return { filters: { ...state.filters, folders: nextFolders } };
+        }),
       resetFilters: (filters) => set({ filters }),
       updateSummary: (article) =>
         set((state) => ({
@@ -102,6 +110,7 @@ export const useArticleStore = create<ArticleStore>()(
           }
           filters.newTodayOnly = false;
           filters.showDuplicates = false;
+          filters.folders = [];
           state.filters = filters;
         }
         return state as never;

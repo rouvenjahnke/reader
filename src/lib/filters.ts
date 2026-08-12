@@ -12,6 +12,7 @@ export const defaultFilters: ArticleFilters = {
   statuses: defaultStatuses,
   sources: [],
   tags: [],
+  folders: [],
   query: '',
   galoisOnly: false,
   newTodayOnly: false,
@@ -29,6 +30,7 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
   const activeStatuses = filters.statuses.length > 0 ? filters.statuses : defaultStatuses;
   const activeSources = new Set(filters.sources);
   const activeTags = new Set(filters.tags ?? []);
+  const activeFolders = new Set(filters.folders ?? []);
   const pinPriority = prefs.pinPriorityOnTop ?? true;
   const newCutoff = Date.now() - DAY_MS;
 
@@ -37,6 +39,7 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
     if (!activeStatuses.includes(status)) return false;
     if (activeSources.size > 0 && !activeSources.has(article.frontmatter.source ?? '')) return false;
     if (activeTags.size > 0 && !(article.frontmatter.tags ?? []).some((tag) => activeTags.has(tag))) return false;
+    if (activeFolders.size > 0 && !activeFolders.has(article.pipelineFolder ?? '')) return false;
     if (filters.galoisOnly && !isGalois(article)) return false;
     if (filters.newTodayOnly && !isNewSince(article, newCutoff)) return false;
     return true;
@@ -47,7 +50,7 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
     const fuse = new Fuse(result, {
       threshold: 0.35,
       ignoreLocation: true,
-      keys: ['frontmatter.title', 'frontmatter.author', 'frontmatter.tags']
+      keys: ['frontmatter.title', 'frontmatter.author', 'frontmatter.source', 'frontmatter.tags', 'pipelineFolder', 'pipelineRelativePath', 'path']
     });
     result = fuse.search(query).map((entry) => entry.item);
   }
@@ -85,6 +88,12 @@ export function collectSources(articles: ArticleSummary[]): string[] {
 
 export function collectTags(articles: ArticleSummary[]): string[] {
   return Array.from(new Set(articles.flatMap((article) => article.frontmatter.tags ?? []).filter((tag) => tag.trim().length > 0))).sort(
+    compareFilterOption
+  );
+}
+
+export function collectFolders(articles: ArticleSummary[]): string[] {
+  return Array.from(new Set(articles.map((article) => article.pipelineFolder).filter((folder): folder is string => Boolean(folder)))).sort(
     compareFilterOption
   );
 }

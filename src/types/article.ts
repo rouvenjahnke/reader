@@ -24,7 +24,7 @@ export interface ArticleFrontmatter {
   [key: string]: unknown;
 }
 
-/** Where a summary was loaded from: the daily pipeline folder (default) or the optional papers folder. */
+/** Where a summary was loaded from: paper/preprint pipeline folders or the optional papers folder. */
 export type ArticleCollection = 'papers';
 
 /** Visibility of the optional papers folder in all views. */
@@ -36,8 +36,12 @@ export interface ArticleSummary {
   etag?: string;
   lastModified?: string;
   size?: number;
-  /** Set to 'papers' for articles from NEXTCLOUD_PAPERS_PATH; undefined for the pipeline folder. */
+  /** Set to 'papers' for articles from paper/preprint paths. */
   collection?: ArticleCollection;
+  /** Path below the configured reader pipeline root, e.g. "math_blogs/2026-08-12-post.md". */
+  pipelineRelativePath?: string;
+  /** First directory below the configured reader pipeline root, e.g. "math_blogs". */
+  pipelineFolder?: string;
   frontmatter: ArticleFrontmatter;
   /** Client-side: ISO timestamp when this id was first observed on this device. */
   firstSeenAt?: string;
@@ -57,6 +61,7 @@ export interface ArticleFilters {
   statuses: ReaderStatus[];
   sources: string[];
   tags: string[];
+  folders: string[];
   query: string;
   /** Show only Galois-source articles. */
   galoisOnly: boolean;

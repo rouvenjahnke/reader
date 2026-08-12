@@ -21,17 +21,17 @@ NEXTCLOUD_URL=https://nextcloud.example.com/remote.php/dav/files/<user>
 NEXTCLOUD_USERNAME=<user>
 NEXTCLOUD_APP_PASSWORD=<app-password>
 NEXTCLOUD_BASE_PATH=/Workstation/Projects/maths/00_inbox/reader-pipeline/
-# optional: zweiter Ordner mit gesternten arXiv-Papern
+# optional: zweiter Ordner mit gesternten arXiv-Papern, falls sie ausserhalb der Pipeline liegen
 NEXTCLOUD_PAPERS_PATH=/Workstation/Projects/maths/00_inbox/papers/
 ```
 
 Alle WebDAV-Zugriffe laufen serverseitig über die Next.js API-Routes. Das Frontend bekommt keine Nextcloud-Credentials.
 
-Ist `NEXTCLOUD_PAPERS_PATH` gesetzt, erscheinen die Markdown-Dateien aus diesem Ordner zusätzlich in der App — mit »paper«-Badge in der Liste und einem »Papers«-Chip in der Filterleiste. Unter Settings → Papers folder lässt sich wählen: gemischt anzeigen, nur Paper, oder ganz ausblenden (auch bei gesetztem Pfad).
+Alle Markdown-Dateien unter `NEXTCLOUD_BASE_PATH` werden rekursiv gelesen. Der erste Unterordner der Pipeline, z. B. `math_blogs`, `ai_blogs`, `ml_papers`, `math_preprints`, wird als `pipelineFolder` erfasst und ist in der Filterleiste unter »Folders« filterbar. Pipeline-Ordner mit `paper` oder `preprint` im Namen sowie Dateien mit Frontmatter `type: paper`/`type: preprint` erhalten zusätzlich die Paper-Kennung. Ist `NEXTCLOUD_PAPERS_PATH` gesetzt, erscheinen auch Markdown-Dateien aus diesem separaten Ordner als Paper.
 
 ## Ansichten
 
-- **Liste** (`/`): filterbar nach Status, Quelle, Tags, Suche (inkl. Volltext im lokalen Cache) und Sortierung. Dedup, »Neu heute«- und Galois-Filter.
+- **Liste** (`/`): filterbar nach Status, Quelle, Tags, Pipeline-Ordner, Suche (inkl. Volltext im lokalen Cache) und Sortierung. Dedup, »Neu heute«-, Paper- und Galois-Filter.
 - **Triage** (`/triage`): ein unbewerteter Artikel nach dem anderen — Titel, Metadaten, Textvorschau. Bewerten mit `1`/`2`/`3`, Überspringen mit `→`, Fortschrittszähler.
 - **Library** (`/library`): alle als relevant/high bewerteten Artikel, gruppierbar nach Monat, Tag oder Quelle, mit Filter.
 - **Reader** (`/article/[id]`): Inhaltsverzeichnis (`c`), Notiz pro Artikel (`n`, wird ins Frontmatter geschrieben), References & Tools (arXiv abs/PDF, BibTeX- und Zitat-Copy, Obsidian-Deep-Link), Lesefortschritt, Highlights.

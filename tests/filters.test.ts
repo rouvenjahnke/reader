@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applyPapersVisibility,
+  collectFolders,
   collectSources,
   collectTags,
   dedupeArticles,
@@ -18,6 +19,7 @@ const baseFilters: ArticleFilters = {
   statuses: ['unrated'],
   sources: [],
   tags: [],
+  folders: [],
   query: '',
   galoisOnly: false,
   newTodayOnly: false,
@@ -80,6 +82,28 @@ describe('filters', () => {
     expect(filterAndSortArticles(articles, { ...baseFilters, statuses: ['unrated', 'relevant'], query: 'algebra' }).map((article) => article.id)).toEqual(['a']);
   });
 
+  it('searches source and pipeline folder metadata', () => {
+    const input: ArticleSummary[] = [
+      {
+        id: 'tao',
+        path: '/reader-pipeline/math_blogs/tao.md',
+        pipelineFolder: 'math_blogs',
+        pipelineRelativePath: 'math_blogs/tao.md',
+        frontmatter: { title: 'Inverse Galois challenge', source: "Terry Tao's Blog", reader_status: 'unrated' }
+      },
+      {
+        id: 'ml',
+        path: '/reader-pipeline/ml_papers/paper.md',
+        pipelineFolder: 'ml_papers',
+        pipelineRelativePath: 'ml_papers/paper.md',
+        frontmatter: { title: 'Transformer paper', source: 'arXiv', reader_status: 'unrated' }
+      }
+    ];
+
+    expect(filterAndSortArticles(input, { ...baseFilters, query: 'terry' }).map((article) => article.id)).toEqual(['tao']);
+    expect(filterAndSortArticles(input, { ...baseFilters, query: 'ml papers' }).map((article) => article.id)).toEqual(['ml']);
+  });
+
   it('collects sources', () => {
     expect(collectSources(articles)).toEqual(['arXiv', 'Blog', 'galois']);
   });
@@ -90,6 +114,17 @@ describe('filters', () => {
 
   it('collects tags', () => {
     expect(collectTags(articles)).toEqual(['ai', 'capture', 'math']);
+  });
+
+  it('collects and filters pipeline folders', () => {
+    const input: ArticleSummary[] = [
+      { id: 'math', path: '/reader-pipeline/math_blogs/a.md', pipelineFolder: 'math_blogs', frontmatter: { title: 'Math', reader_status: 'unrated' } },
+      { id: 'ml', path: '/reader-pipeline/ml_papers/b.md', pipelineFolder: 'ml_papers', frontmatter: { title: 'ML', reader_status: 'unrated' } },
+      { id: 'root', path: '/reader-pipeline/Overview.md', frontmatter: { title: 'Root', reader_status: 'unrated' } }
+    ];
+
+    expect(collectFolders(input)).toEqual(['math_blogs', 'ml_papers']);
+    expect(filterAndSortArticles(input, { ...baseFilters, folders: ['math_blogs'] }).map((article) => article.id)).toEqual(['math']);
   });
 
   it('pins mathematics and machine learning filter options', () => {

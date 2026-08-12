@@ -105,6 +105,14 @@ export async function saveSummaries(articles: ArticleSummary[]): Promise<{ newId
   for (const summary of enriched) await tx.store.put(summary);
   await tx.done;
 
+  const currentIds = new Set(enriched.map((summary) => summary.id));
+  const cachedArticleKeys = await db.getAllKeys('articles');
+  const articleTx = db.transaction('articles', 'readwrite');
+  for (const key of cachedArticleKeys) {
+    if (!currentIds.has(String(key))) void articleTx.store.delete(key);
+  }
+  await articleTx.done;
+
   return { newIds };
 }
 
@@ -305,6 +313,9 @@ function stripBody(article: Article): ArticleSummary {
     etag: article.etag,
     lastModified: article.lastModified,
     size: article.size,
+    collection: article.collection,
+    pipelineRelativePath: article.pipelineRelativePath,
+    pipelineFolder: article.pipelineFolder,
     frontmatter: article.frontmatter,
     firstSeenAt: article.firstSeenAt
   };

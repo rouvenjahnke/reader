@@ -221,7 +221,7 @@ export default function SettingsPage(): React.ReactElement {
             ))}
           </div>
           <span className="text-xs text-mutedink">
-            Articles from the optional second Nextcloud folder (<code className="font-meta">NEXTCLOUD_PAPERS_PATH</code> in <code className="font-meta">.env</code>) carry a »paper« badge. »Only papers« can also be toggled from the filter bar.
+            Pipeline folders with <code className="font-meta">paper</code> or <code className="font-meta">preprint</code> in their name carry a »paper« badge. A separate <code className="font-meta">NEXTCLOUD_PAPERS_PATH</code> can still be used for papers outside the pipeline.
           </span>
         </div>
       </section>

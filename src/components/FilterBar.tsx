@@ -6,10 +6,10 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { collectSources, collectTags, isGalois, PRIORITY_SOURCE } from '@/lib/filters';
+import { collectFolders, collectSources, collectTags, defaultFilters, isGalois, PRIORITY_SOURCE } from '@/lib/filters';
 import { useArticleStore } from '@/stores/useArticleStore';
 import { usePreferencesStore } from '@/stores/usePreferencesStore';
-import type { ArticleSummary, ReaderStatus } from '@/types/article';
+import type { ArticleFilters, ArticleSummary, ReaderStatus } from '@/types/article';
 
 const statuses: Array<{ value: ReaderStatus; label: string }> = [
   { value: 'unrated', label: 'Unrated' },
@@ -38,8 +38,10 @@ interface Props {
 export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElement {
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
+  const [foldersOpen, setFoldersOpen] = useState(false);
   const [sourceQuery, setSourceQuery] = useState('');
   const [tagQuery, setTagQuery] = useState('');
+  const [folderQuery, setFolderQuery] = useState('');
   const filters = useArticleStore((state) => state.filters);
   const setSortMode = useArticleStore((state) => state.setSortMode);
   const setQuery = useArticleStore((state) => state.setQuery);
@@ -49,15 +51,23 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
   const toggleStatus = useArticleStore((state) => state.toggleStatus);
   const toggleSource = useArticleStore((state) => state.toggleSource);
   const toggleTag = useArticleStore((state) => state.toggleTag);
+  const toggleFolder = useArticleStore((state) => state.toggleFolder);
+  const resetFilters = useArticleStore((state) => state.resetFilters);
   const sources = collectSources(articles);
   const tags = collectTags(articles);
+  const folders = collectFolders(articles);
   const filteredSources = filterOptions(sources, sourceQuery);
   const filteredTags = filterOptions(tags, tagQuery);
+  const filteredFolders = filterOptions(folders, folderQuery);
   const selectedTags = filters.tags ?? [];
+  const selectedFolders = filters.folders ?? [];
   const hasGalois = articles.some(isGalois);
   const papersVisibility = usePreferencesStore((state) => state.papersVisibility);
   const setPreference = usePreferencesStore((state) => state.setPreference);
   const hasPapers = articles.some((article) => article.collection === 'papers');
+  const hasActiveFilters = isFiltering(filters, papersVisibility);
+  const allStatuses = statuses.map((status) => status.value);
+  const allStatusesSelected = allStatuses.every((status) => filters.statuses.includes(status));
 
   return (
     <div className="reader-surface-bar sticky top-0 z-20 border-b px-3 py-3 text-ink">
@@ -163,6 +173,15 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
               Papers
             </Button>
           ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant={allStatusesSelected ? 'default' : 'secondary'}
+            onClick={() => resetFilters({ ...filters, statuses: allStatusesSelected ? ['unrated'] : allStatuses })}
+            title="Toggle all rating statuses"
+          >
+            All
+          </Button>
           {statuses.map((status) => (
             <Button
               key={status.value}
@@ -180,6 +199,9 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           <Button type="button" size="sm" variant={selectedTags.length > 0 ? 'default' : 'secondary'} onClick={() => setTagsOpen(true)}>
             Tags{selectedTags.length > 0 ? ` (${selectedTags.length})` : ''}
           </Button>
+          <Button type="button" size="sm" variant={selectedFolders.length > 0 ? 'default' : 'secondary'} onClick={() => setFoldersOpen(true)}>
+            Folders{selectedFolders.length > 0 ? ` (${selectedFolders.length})` : ''}
+          </Button>
           {meta.duplicateCount > 0 ? (
             <Button
               type="button"
@@ -189,6 +211,20 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
               title="Show duplicate articles inline"
             >
               <Layers className="h-3.5 w-3.5" /> Duplicates · {meta.duplicateCount}
+            </Button>
+          ) : null}
+          {hasActiveFilters ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                resetFilters({ ...defaultFilters, statuses: [...defaultFilters.statuses], sortMode: filters.sortMode });
+                setPreference('papersVisibility', 'shown');
+              }}
+              title="Reset search and filters"
+            >
+              Clear
             </Button>
           ) : null}
         </div>
@@ -229,6 +265,26 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
             <label key={tag} className="flex min-h-11 items-center gap-3 rounded-sm px-3 text-sm hover:bg-surface-muted">
               <input type="checkbox" className="accent-[var(--accent)]" checked={selectedTags.includes(tag)} onChange={() => toggleTag(tag)} />
               <span className="min-w-0 flex-1 truncate">{tag}</span>
+            </label>
+          ))}
+        </FilterDialog>
+      ) : null}
+      {foldersOpen ? (
+        <FilterDialog
+          title="Folders"
+          count={folders.length}
+          visibleCount={filteredFolders.length}
+          searchValue={folderQuery}
+          searchPlaceholder="Search folders"
+          onSearchChange={setFolderQuery}
+          onClose={() => setFoldersOpen(false)}
+        >
+          {folders.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No folders</p> : null}
+          {folders.length > 0 && filteredFolders.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No matching folders</p> : null}
+          {filteredFolders.map((folder) => (
+            <label key={folder} className="flex min-h-11 items-center gap-3 rounded-sm px-3 text-sm hover:bg-surface-muted">
+              <input type="checkbox" className="accent-[var(--accent)]" checked={selectedFolders.includes(folder)} onChange={() => toggleFolder(folder)} />
+              <span className="min-w-0 flex-1 truncate">{folder}</span>
             </label>
           ))}
         </FilterDialog>
@@ -291,6 +347,21 @@ function filterOptions(options: string[], query: string): string[] {
 
 function normalizeFilterSearch(value: string): string {
   return value.trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+}
+
+function isFiltering(filters: ArticleFilters, papersVisibility: string): boolean {
+  return (
+    filters.query.trim().length > 0 ||
+    filters.statuses.length !== 1 ||
+    filters.statuses[0] !== 'unrated' ||
+    filters.sources.length > 0 ||
+    (filters.tags ?? []).length > 0 ||
+    (filters.folders ?? []).length > 0 ||
+    filters.galoisOnly ||
+    filters.newTodayOnly ||
+    filters.showDuplicates ||
+    papersVisibility !== 'shown'
+  );
 }
 
 function SyncStatusLine({ meta }: { meta: FilterBarMeta }): React.ReactElement | null {

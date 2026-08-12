@@ -27,7 +27,7 @@ const DAY_MS = 86_400_000;
 const PINNED_FILTER_OPTIONS = ['mathematics', 'machine learning'];
 
 export function filterAndSortArticles(articles: ArticleSummary[], filters: ArticleFilters, prefs: SortPreferences = {}): ArticleSummary[] {
-  const activeStatuses = filters.statuses.length > 0 ? filters.statuses : defaultStatuses;
+  const activeStatuses = filters.statuses;
   const activeSources = new Set(filters.sources);
   const activeTags = new Set(filters.tags ?? []);
   const activeFolders = new Set(filters.folders ?? []);

@@ -40,7 +40,8 @@ export default function HomePage(): React.ReactElement {
   const [prefetch, setPrefetch] = useState<{ done: number; total: number } | undefined>(undefined);
   const [pendingCount, setPendingCount] = useState(0);
   const [bodyMatches, setBodyMatches] = useState<Set<string>>(new Set());
-  const [height, setHeight] = useState(720);
+  const [height, setHeight] = useState(520);
+  const listHostRef = useRef<HTMLDivElement>(null);
   const prefetchRef = useRef<{ cancel: () => void } | null>(null);
   const lastRefreshRef = useRef<number>(0);
 
@@ -135,12 +136,9 @@ export default function HomePage(): React.ReactElement {
       void refresh(true);
     };
     const onOffline = () => setOffline(true);
-    const onResize = () => setHeight(Math.max(420, window.innerHeight - 196));
     const onPaletteSync = () => void refresh(false);
-    onResize();
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
-    window.addEventListener('resize', onResize);
     window.addEventListener('reader:sync', onPaletteSync);
     return () => {
       cancelled = true;
@@ -148,11 +146,23 @@ export default function HomePage(): React.ReactElement {
       prefetchRef.current?.cancel();
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
-      window.removeEventListener('resize', onResize);
       window.removeEventListener('reader:sync', onPaletteSync);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoSyncOnOpen, syncIntervalMinutes, bodyPrefetch]);
+
+  useEffect(() => {
+    const updateListHeight = () => {
+      const top = listHostRef.current?.getBoundingClientRect().top ?? 0;
+      setHeight(Math.max(320, window.innerHeight - top - 12));
+    };
+    const frame = window.requestAnimationFrame(updateListHeight);
+    window.addEventListener('resize', updateListHeight);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', updateListHeight);
+    };
+  }, [filtered.length, hydrated, lastArticle?.id, showContinueReading]);
 
   // View shortcuts: t = triage, b = library, / = focus search.
   useEffect(() => {
@@ -212,13 +222,15 @@ export default function HomePage(): React.ReactElement {
     prefetch,
     sessionNewCount,
     pendingCount,
-    unratedCount
+    unratedCount,
+    resultCount: filtered.length,
+    totalCount: visibleArticles.length
   };
 
   return (
     <main className="min-h-screen">
       <FilterBar articles={visibleArticles} onRefresh={() => void refresh(false)} meta={meta} />
-      <section className="mx-auto max-w-[720px] py-3">
+      <section className="mx-auto max-w-[880px] py-3">
         {!hydrated ? <p className="px-4 pb-2 font-meta text-xs text-mutedink">Loading…</p> : null}
         {showContinueReading && lastArticle ? (
           <div className="px-4 pb-2">
@@ -235,19 +247,21 @@ export default function HomePage(): React.ReactElement {
           </div>
         ) : null}
         {hydrated && filtered.length === 0 ? (
-          <div className="px-4 py-24 text-center text-mutedink">No articles. The pipeline runs daily at 07:00.</div>
+          <div className="px-4 py-24 text-center text-mutedink">No articles match the current filters.</div>
         ) : null}
-        {filtered.length > 0 ? (
-          <FixedSizeList
-            height={height}
-            width="100%"
-            itemCount={filtered.length}
-            itemSize={LIST_ITEM_SIZE}
-            itemData={{ articles: filtered, sessionNewIds: sessionNewSet }}
-          >
-            {Row}
-          </FixedSizeList>
-        ) : null}
+        <div ref={listHostRef}>
+          {filtered.length > 0 ? (
+            <FixedSizeList
+              height={height}
+              width="100%"
+              itemCount={filtered.length}
+              itemSize={LIST_ITEM_SIZE}
+              itemData={{ articles: filtered, sessionNewIds: sessionNewSet }}
+            >
+              {Row}
+            </FixedSizeList>
+          ) : null}
+        </div>
       </section>
     </main>
   );

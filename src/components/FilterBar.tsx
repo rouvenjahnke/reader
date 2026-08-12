@@ -1,6 +1,6 @@
 'use client';
 
-import { Clock, Command, Layers, LibraryBig, ListChecks, RefreshCw, Search, Settings, Sparkles, X } from 'lucide-react';
+import { CheckCheck, CircleOff, Clock, Command, Layers, LibraryBig, ListChecks, RefreshCw, Search, Settings, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -27,6 +27,8 @@ export interface FilterBarMeta {
   sessionNewCount: number;
   pendingCount: number;
   unratedCount: number;
+  resultCount: number;
+  totalCount: number;
 }
 
 interface Props {
@@ -59,6 +61,9 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
   const filteredSources = filterOptions(sources, sourceQuery);
   const filteredTags = filterOptions(tags, tagQuery);
   const filteredFolders = filterOptions(folders, folderQuery);
+  const sourceCounts = countOptions(articles, (article) => (article.frontmatter.source ? [article.frontmatter.source] : []));
+  const tagCounts = countOptions(articles, (article) => article.frontmatter.tags ?? []);
+  const folderCounts = countOptions(articles, (article) => (article.pipelineFolder ? [article.pipelineFolder] : []));
   const selectedTags = filters.tags ?? [];
   const selectedFolders = filters.folders ?? [];
   const hasGalois = articles.some(isGalois);
@@ -70,8 +75,8 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
   const allStatusesSelected = allStatuses.every((status) => filters.statuses.includes(status));
 
   return (
-    <div className="reader-surface-bar sticky top-0 z-20 border-b px-3 py-3 text-ink">
-      <div className="mx-auto flex max-w-[720px] flex-col gap-3">
+    <div className="reader-surface-bar sticky top-0 z-20 border-b px-3 py-3 text-ink shadow-[0_1px_0_var(--border)]">
+      <div className="mx-auto flex max-w-[880px] flex-col gap-2.5">
         <div className="flex items-center gap-2">
           <span className="hidden select-none font-heading text-lg font-bold italic sm:block" aria-hidden="true">
             Reader
@@ -130,15 +135,64 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           </Link>
         </div>
 
-        <SyncStatusLine meta={meta} />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <SyncStatusLine meta={meta} />
+          <span className="font-meta text-[11px] tabular-nums text-mutedink">
+            {meta.resultCount} of {meta.totalCount} articles
+          </span>
+          <div className="ml-auto inline-flex rounded-sm border border-hairline bg-surface p-0.5" aria-label="Sort articles">
+            <button
+              type="button"
+              className={`h-8 rounded-[2px] px-3 text-xs font-medium transition-colors ${filters.sortMode === 'newest' ? 'bg-ink text-paper' : 'text-mutedink hover:bg-surface-muted hover:text-ink'}`}
+              onClick={() => setSortMode('newest')}
+              aria-pressed={filters.sortMode === 'newest'}
+            >
+              Added
+            </button>
+            <button
+              type="button"
+              className={`h-8 rounded-[2px] px-3 text-xs font-medium transition-colors ${filters.sortMode === 'score' ? 'bg-ink text-paper' : 'text-mutedink hover:bg-surface-muted hover:text-ink'}`}
+              onClick={() => setSortMode('score')}
+              aria-pressed={filters.sortMode === 'score'}
+            >
+              Score
+            </button>
+          </div>
+        </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          <Button type="button" size="sm" variant={filters.sortMode === 'newest' ? 'default' : 'secondary'} onClick={() => setSortMode('newest')}>
-            Added
-          </Button>
-          <Button type="button" size="sm" variant={filters.sortMode === 'score' ? 'default' : 'secondary'} onClick={() => setSortMode('score')}>
-            Score
-          </Button>
+        <div className="flex items-start gap-3 border-t border-hairline pt-2.5">
+          <span className="theorem-label w-14 shrink-0 pt-2.5 text-mutedink">Status</span>
+          <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant={allStatusesSelected ? 'default' : 'secondary'}
+              onClick={() => resetFilters({ ...filters, statuses: allStatusesSelected ? [] : allStatuses })}
+              aria-pressed={allStatusesSelected}
+              title={allStatusesSelected ? 'Deselect all rating statuses' : 'Select all rating statuses'}
+            >
+              All statuses
+            </Button>
+            {statuses.map((status) => (
+              <Button
+                key={status.value}
+                type="button"
+                size="sm"
+                variant={filters.statuses.includes(status.value) ? 'default' : 'secondary'}
+                onClick={() => toggleStatus(status.value)}
+                aria-pressed={filters.statuses.includes(status.value)}
+              >
+                {status.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <span className="theorem-label flex w-14 shrink-0 items-center gap-1 pt-2.5 text-mutedink">
+            <SlidersHorizontal className="h-3 w-3" /> Filter
+          </span>
+          <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
           <Button
             type="button"
             size="sm"
@@ -173,26 +227,6 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
               Papers
             </Button>
           ) : null}
-          <Button
-            type="button"
-            size="sm"
-            variant={allStatusesSelected ? 'default' : 'secondary'}
-            onClick={() => resetFilters({ ...filters, statuses: allStatusesSelected ? ['unrated'] : allStatuses })}
-            title="Toggle all rating statuses"
-          >
-            All
-          </Button>
-          {statuses.map((status) => (
-            <Button
-              key={status.value}
-              type="button"
-              size="sm"
-              variant={filters.statuses.includes(status.value) ? 'default' : 'secondary'}
-              onClick={() => toggleStatus(status.value)}
-            >
-              {status.label}
-            </Button>
-          ))}
           <Button type="button" size="sm" variant={filters.sources.length > 0 ? 'default' : 'secondary'} onClick={() => setSourcesOpen(true)}>
             Sources{filters.sources.length > 0 ? ` (${filters.sources.length})` : ''}
           </Button>
@@ -224,9 +258,10 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
               }}
               title="Reset search and filters"
             >
-              Clear
+              <X className="h-3.5 w-3.5" /> Clear
             </Button>
           ) : null}
+          </div>
         </div>
       </div>
       {sourcesOpen ? (
@@ -238,6 +273,11 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           searchPlaceholder="Search sources"
           onSearchChange={setSourceQuery}
           onClose={() => setSourcesOpen(false)}
+          selectedCount={filters.sources.length}
+          selectedVisibleCount={filteredSources.filter((source) => filters.sources.includes(source)).length}
+          allVisibleSelected={filteredSources.length > 0 && filteredSources.every((source) => filters.sources.includes(source))}
+          onSelectAll={() => resetFilters({ ...filters, sources: mergeOptions(filters.sources, filteredSources) })}
+          onDeselectAll={() => resetFilters({ ...filters, sources: removeOptions(filters.sources, filteredSources) })}
         >
           {sources.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No sources</p> : null}
           {sources.length > 0 && filteredSources.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No matching sources</p> : null}
@@ -245,6 +285,7 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
             <label key={source} className="flex min-h-11 items-center gap-3 rounded-sm px-3 text-sm hover:bg-surface-muted">
               <input type="checkbox" className="accent-[var(--accent)]" checked={filters.sources.includes(source)} onChange={() => toggleSource(source)} />
               <span className="min-w-0 flex-1 truncate">{source}</span>
+              <span className="font-meta text-[11px] tabular-nums text-mutedink">{sourceCounts.get(source) ?? 0}</span>
             </label>
           ))}
         </FilterDialog>
@@ -258,6 +299,11 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           searchPlaceholder="Search tags"
           onSearchChange={setTagQuery}
           onClose={() => setTagsOpen(false)}
+          selectedCount={selectedTags.length}
+          selectedVisibleCount={filteredTags.filter((tag) => selectedTags.includes(tag)).length}
+          allVisibleSelected={filteredTags.length > 0 && filteredTags.every((tag) => selectedTags.includes(tag))}
+          onSelectAll={() => resetFilters({ ...filters, tags: mergeOptions(selectedTags, filteredTags) })}
+          onDeselectAll={() => resetFilters({ ...filters, tags: removeOptions(selectedTags, filteredTags) })}
         >
           {tags.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No tags</p> : null}
           {tags.length > 0 && filteredTags.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No matching tags</p> : null}
@@ -265,6 +311,7 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
             <label key={tag} className="flex min-h-11 items-center gap-3 rounded-sm px-3 text-sm hover:bg-surface-muted">
               <input type="checkbox" className="accent-[var(--accent)]" checked={selectedTags.includes(tag)} onChange={() => toggleTag(tag)} />
               <span className="min-w-0 flex-1 truncate">{tag}</span>
+              <span className="font-meta text-[11px] tabular-nums text-mutedink">{tagCounts.get(tag) ?? 0}</span>
             </label>
           ))}
         </FilterDialog>
@@ -278,6 +325,11 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           searchPlaceholder="Search folders"
           onSearchChange={setFolderQuery}
           onClose={() => setFoldersOpen(false)}
+          selectedCount={selectedFolders.length}
+          selectedVisibleCount={filteredFolders.filter((folder) => selectedFolders.includes(folder)).length}
+          allVisibleSelected={filteredFolders.length > 0 && filteredFolders.every((folder) => selectedFolders.includes(folder))}
+          onSelectAll={() => resetFilters({ ...filters, folders: mergeOptions(selectedFolders, filteredFolders) })}
+          onDeselectAll={() => resetFilters({ ...filters, folders: removeOptions(selectedFolders, filteredFolders) })}
         >
           {folders.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No folders</p> : null}
           {folders.length > 0 && filteredFolders.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No matching folders</p> : null}
@@ -285,6 +337,7 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
             <label key={folder} className="flex min-h-11 items-center gap-3 rounded-sm px-3 text-sm hover:bg-surface-muted">
               <input type="checkbox" className="accent-[var(--accent)]" checked={selectedFolders.includes(folder)} onChange={() => toggleFolder(folder)} />
               <span className="min-w-0 flex-1 truncate">{folder}</span>
+              <span className="font-meta text-[11px] tabular-nums text-mutedink">{folderCounts.get(folder) ?? 0}</span>
             </label>
           ))}
         </FilterDialog>
@@ -299,6 +352,11 @@ function FilterDialog({
   visibleCount,
   searchValue,
   searchPlaceholder,
+  selectedCount,
+  selectedVisibleCount,
+  allVisibleSelected,
+  onSelectAll,
+  onDeselectAll,
   onSearchChange,
   onClose,
   children
@@ -308,6 +366,11 @@ function FilterDialog({
   visibleCount: number;
   searchValue: string;
   searchPlaceholder: string;
+  selectedCount: number;
+  selectedVisibleCount: number;
+  allVisibleSelected: boolean;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
   onSearchChange: (value: string) => void;
   onClose: () => void;
   children: React.ReactNode;
@@ -320,7 +383,7 @@ function FilterDialog({
           <div>
             <h2 className="font-heading text-base font-bold">{title}</h2>
             <p className="font-meta text-[11px] text-mutedink">
-              {count} available{searchValue.trim() ? ` · ${visibleCount} shown` : ''}
+              {selectedCount} selected · {count} available{searchValue.trim() ? ` · ${visibleCount} shown` : ''}
             </p>
           </div>
           <Button type="button" size="icon" variant="ghost" onClick={onClose} aria-label="Close">
@@ -331,6 +394,14 @@ function FilterDialog({
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mutedink" />
             <Input className="h-9 pl-9" placeholder={searchPlaceholder} value={searchValue} onChange={(event) => onSearchChange(event.target.value)} />
+          </div>
+          <div className="mt-2 flex gap-2">
+            <Button type="button" size="sm" variant={allVisibleSelected ? 'default' : 'secondary'} onClick={onSelectAll} disabled={visibleCount === 0}>
+              <CheckCheck className="h-3.5 w-3.5" /> {searchValue.trim() ? 'Select shown' : 'Select all'}
+            </Button>
+            <Button type="button" size="sm" variant="secondary" onClick={onDeselectAll} disabled={selectedVisibleCount === 0}>
+              <CircleOff className="h-3.5 w-3.5" /> {searchValue.trim() ? 'Deselect shown' : 'Deselect all'}
+            </Button>
           </div>
         </div>
         <div className="overflow-y-auto p-2">{children}</div>
@@ -347,6 +418,23 @@ function filterOptions(options: string[], query: string): string[] {
 
 function normalizeFilterSearch(value: string): string {
   return value.trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+}
+
+function mergeOptions(selected: string[], options: string[]): string[] {
+  return Array.from(new Set([...selected, ...options]));
+}
+
+function removeOptions(selected: string[], options: string[]): string[] {
+  const removed = new Set(options);
+  return selected.filter((option) => !removed.has(option));
+}
+
+function countOptions(articles: ArticleSummary[], getOptions: (article: ArticleSummary) => string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const article of articles) {
+    for (const option of new Set(getOptions(article))) counts.set(option, (counts.get(option) ?? 0) + 1);
+  }
+  return counts;
 }
 
 function isFiltering(filters: ArticleFilters, papersVisibility: string): boolean {

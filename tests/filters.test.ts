@@ -74,6 +74,10 @@ describe('filters', () => {
     expect(filterAndSortArticles(articles, baseFilters).map((article) => article.id)).toEqual(['c', 'a']);
   });
 
+  it('returns no articles when all statuses are deselected', () => {
+    expect(filterAndSortArticles(articles, { ...baseFilters, statuses: [] })).toEqual([]);
+  });
+
   it('sorts by score', () => {
     expect(filterAndSortArticles(articles, { ...baseFilters, sortMode: 'score', statuses: ['unrated', 'relevant'] }).map((article) => article.id)).toEqual(['c', 'b', 'a']);
   });

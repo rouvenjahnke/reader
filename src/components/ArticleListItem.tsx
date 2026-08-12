@@ -26,8 +26,8 @@ export function ArticleListItem({ article, isNew, style }: Props): React.ReactEl
         href={`/article/${article.id}`}
         className="flex h-full flex-col justify-center gap-1.5 border-b border-hairline px-1 transition-colors hover:bg-surface-muted"
       >
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 className="line-clamp-2 font-heading text-[1.08rem] font-bold leading-snug">{fm.title}</h2>
+        <div className="flex min-w-0 items-baseline justify-between gap-3">
+          <h2 className="min-w-0 flex-1 break-words line-clamp-2 font-heading text-[1.08rem] font-bold leading-snug">{fm.title}</h2>
           <span className="shrink-0 font-meta text-xs tabular-nums text-mutedink" title="Pipeline score">
             {typeof fm.score === 'number' ? fm.score.toFixed(1) : '—'}
           </span>
@@ -43,7 +43,7 @@ export function ArticleListItem({ article, isNew, style }: Props): React.ReactEl
           ) : null}
           {status !== 'unrated' ? <Badge className={statusClass(status)}>{statusLabel(status)}</Badge> : null}
           {fm.tags?.slice(0, 3).map((tag) => (
-            <Badge key={tag}>{tag}</Badge>
+            <Badge key={tag} className="hidden sm:inline-flex">{tag}</Badge>
           ))}
         </div>
       </Link>

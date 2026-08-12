@@ -74,3 +74,46 @@ docker compose up -d
 ```
 
 Reverse Proxy auf `http://reader:3000` bzw. den lokalen Port `3000` zeigen lassen.
+
+## Terry-Tao-Pipeline diagnostizieren
+
+Das rein lesende Diagnosewerkzeug verfolgt Terry-Tao-Einträge durch Miniflux,
+den aktiven n8n-Workflow samt Ausführungen, `blog_sources`, `math_articles`,
+Nextcloud/WebDAV und die Reader-API. Es schreibt keine Daten in diese Systeme und
+gibt keine Zugangsdaten in den Bericht aus.
+
+Für die vollständige Datenbankprüfung eine separate PostgreSQL-Rolle mit nur
+`SELECT`-Rechten verwenden:
+
+```bash
+cp .env.debug.example .env.debug
+# DATABASE_URL in .env.debug eintragen
+npm run debug:tao
+```
+
+Gezielt den derzeit fehlenden Artikel prüfen:
+
+```bash
+npm run debug:tao -- --entry-id 16451
+```
+
+Der Bericht wird nach `debug-output/terence-tao-report.json` geschrieben. Die
+wichtigsten Ergebnisstufen sind:
+
+| Stufe | Bedeutung |
+| --- | --- |
+| `SOURCE_NOT_REGISTERED` | Feed-ID ist nicht aktiv in `blog_sources` registriert. |
+| `SOURCE_ID_STALE_WORKFLOW_FALLBACK_REQUIRED` | Tao-Quelle existiert, hat aber eine andere Miniflux-Feed-ID. |
+| `WAITING_OR_WORKFLOW_FAILED_BEFORE_NEXTCLOUD` | Miniflux-Eintrag ist ungelesen, aber DB und Datei fehlen. |
+| `NO_N8N_EXECUTION_FOR_ENTRY` | Keine der geprüften aktiven n8n-Ausführungen enthält den Eintrag. |
+| `N8N_EXECUTION_FAILED` | Eine passende n8n-Ausführung ist an einem gemeldeten Knoten fehlgeschlagen. |
+| `N8N_FINISHED_WITHOUT_ARTIFACT` | n8n meldet Erfolg, erzeugte aber weder DB-Zeile noch Datei. |
+| `MARKED_READ_WITHOUT_ARTIFACT` | Eintrag wurde konsumiert, ohne DB-Zeile oder Datei zu erzeugen. |
+| `NEXTCLOUD_FILE_WITHOUT_DATABASE_ROW` | WebDAV-Schreibvorgang gelang, PostgreSQL-Insert nicht. |
+| `DATABASE_ROW_WITHOUT_NEXTCLOUD_FILE` | DB-Zeile existiert, WebDAV-Datei fehlt. |
+| `NEXTCLOUD_FILE_NOT_IN_READER_API` | Datei existiert, wird aber vom Reader nicht eingelesen. |
+| `OK` | Eintrag ist in allen geprüften Stufen vorhanden. |
+
+Mit `npm run debug:tao -- --help` werden alle Filteroptionen angezeigt. Für die
+Reader-Prüfung lokal zuerst `npm run dev` starten oder in `.env.debug` eine
+erreichbare `READER_URL` eintragen.

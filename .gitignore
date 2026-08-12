@@ -5,9 +5,11 @@ coverage
 playwright-report
 test-results
 .env
+.env.debug
 .DS_Store
 npm-debug.log*
 public/sw.js
 public/workbox-*.js
 tsconfig.tsbuildinfo
 Pipeline_Math_AI_Blogs (6).json
+debug-output/

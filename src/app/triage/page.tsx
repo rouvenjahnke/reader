@@ -8,10 +8,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { queueRating, updateCachedRating } from '@/lib/cache';
-import { applyPapersVisibility, dedupeArticles } from '@/lib/filters';
+import { applyContentMode, dedupeArticles } from '@/lib/filters';
 import { loadArticleCacheFirst, loadCachedSummaries } from '@/lib/sync';
 import { useArticleStore } from '@/stores/useArticleStore';
-import { usePreferencesStore } from '@/stores/usePreferencesStore';
 import type { ArticleSummary, ReaderStatus } from '@/types/article';
 
 const EXCERPT_LENGTH = 900;
@@ -58,7 +57,7 @@ export default function TriagePage(): React.ReactElement {
 
   useEffect(() => {
     if (queueIds !== null || articles.length === 0) return;
-    const unratedInput = applyPapersVisibility(articles, usePreferencesStore.getState().papersVisibility).filter(
+    const unratedInput = applyContentMode(articles, 'articles').filter(
       (article) => (article.frontmatter.reader_status ?? 'unrated') === 'unrated'
     );
     const { visible } = dedupeArticles(unratedInput, {

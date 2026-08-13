@@ -12,18 +12,13 @@ import { computeReadingStats, type ActivityDay } from '@/lib/stats';
 import { loadCachedSummaries } from '@/lib/sync';
 import { clearSyncLog, readSyncLog, type SyncLogEntry } from '@/lib/syncLog';
 import { defaultPreferences, type DesignTheme, type FontSize, usePreferencesStore } from '@/stores/usePreferencesStore';
-import type { ArticleSortMode, ArticleSummary, PapersVisibility, ReaderStatus } from '@/types/article';
+import type { ArticleSortMode, ArticleSummary, ReaderStatus } from '@/types/article';
 
 const fontSizes: FontSize[] = ['S', 'M', 'L', 'XL'];
 const designOptions: Array<{ value: DesignTheme; label: string; description: string }> = [
   { value: 'preprint', label: 'Preprint', description: 'The default LaTeX look: warm paper, serif body, hyperref blue.' },
   { value: 'terminal', label: 'Terminal', description: 'Brutalist console: IBM Plex Mono everywhere, hard edges, CRT amber.' },
   { value: 'legibility', label: 'Legibility', description: 'Reading-optimised: neutral paper, AAA contrast, larger and looser prose.' }
-];
-const papersOptions: Array<{ value: PapersVisibility; label: string }> = [
-  { value: 'shown', label: 'Show with articles' },
-  { value: 'only', label: 'Only papers' },
-  { value: 'hidden', label: 'Hidden' }
 ];
 const sortModes: Array<{ value: ArticleSortMode; label: string }> = [
   { value: 'newest', label: 'Added' },
@@ -106,8 +101,8 @@ export default function SettingsPage(): React.ReactElement {
         <h2 className="theorem-label text-mutedink">Reading</h2>
 
         <ToggleRow
-          label="Pin priority on top"
-          description="Articles with reader_priority / reader_pinned in their frontmatter sort to the top, regardless of source."
+          label="Keep pinned items on top"
+          description="Items deliberately pinned in the Reader or by OpenClaw stay above the selected sort order."
           checked={prefs.pinPriorityOnTop}
           onChange={(value) => prefs.setPreference('pinPriorityOnTop', value)}
         />
@@ -202,28 +197,6 @@ export default function SettingsPage(): React.ReactElement {
             The folder inside the vault that mirrors the Nextcloud pipeline directory. Deep links open the article&apos;s markdown file directly.
           </span>
         </label>
-      </section>
-
-      <section className="grid gap-3">
-        <h2 className="theorem-label text-mutedink">Papers folder</h2>
-        <div className="grid gap-2">
-          <span className="text-sm font-medium">Visibility of starred arXiv papers</span>
-          <div className="flex flex-wrap gap-2">
-            {papersOptions.map((option) => (
-              <Button
-                key={option.value}
-                type="button"
-                variant={prefs.papersVisibility === option.value ? 'default' : 'secondary'}
-                onClick={() => prefs.setPreference('papersVisibility', option.value)}
-              >
-                {option.label}
-              </Button>
-            ))}
-          </div>
-          <span className="text-xs text-mutedink">
-            Pipeline folders with <code className="font-meta">paper</code> or <code className="font-meta">preprint</code> in their name carry a »paper« badge. A separate <code className="font-meta">NEXTCLOUD_PAPERS_PATH</code> can still be used for papers outside the pipeline.
-          </span>
-        </div>
       </section>
 
       <section className="grid gap-3">

@@ -77,7 +77,7 @@ function parseArgs(values) {
     feedId: 65,
     entryIds: [],
     output: 'debug-output/terence-tao-report.json',
-    workflow: 'Pipeline_Math_AI_Blogs (6).json',
+    workflow: 'n8n/Pipeline_Math_AI_Blogs.json',
     url: undefined,
     title: undefined,
     help: false
@@ -121,13 +121,13 @@ function printHelp() {
     '  --entry-id <id>      Restrict to an entry; repeatable',
     '  --url <url>          Restrict to one canonical article URL',
     '  --title <text>       Restrict by title substring',
-    '  --workflow <path>    Local n8n export for static checks',
+    '  --workflow <path>    Local sanitized n8n template for static checks',
     '  --output <path>      JSON report path',
     '  --help               Show this help',
     '',
     'Environment:',
     '  DATABASE_URL         PostgreSQL connection; use a SELECT-only role',
-    '  MINIFLUX_URL/TOKEN   Optional; local workflow export is the fallback',
+    '  MINIFLUX_URL/TOKEN   Required for Miniflux checks; never read from templates',
     '  N8N_URL/API_KEY      Optional active-workflow/execution verification',
     '  N8N_WORKFLOW_ID      Optional explicit workflow ID',
     '  NEXTCLOUD_*          Reused from the Reader .env',
@@ -142,8 +142,8 @@ async function inspectWorkflow(file) {
     const minifluxNode = data.nodes.find((node) => node.name.includes('Miniflux GET unread'));
     const scheduleNode = data.nodes.find((node) => node.type === 'n8n-nodes-base.scheduleTrigger');
     const lookupNode = data.nodes.find((node) => node.name.includes('Lookup blog source'));
-    const filterNode = data.nodes.find((node) => node.name.includes('Combined filter'));
-    const tokenNode = minifluxNode.parameters.headerParameters.parameters.find((item) => item.name === 'X-Auth-Token');
+    const filterNode = data.nodes.find((node) => node.name.includes('Combined filter') || node.name.includes('Combined score'));
+    const tokenNode = minifluxNode?.parameters?.headerParameters?.parameters?.find((item) => item.name === 'X-Auth-Token');
     return {
       result: {
         ok: true,
@@ -153,7 +153,7 @@ async function inspectWorkflow(file) {
         schedule: scheduleNode?.parameters?.rule?.interval?.[0]?.expression,
         unreadLimit: minifluxNode.parameters.queryParameters.parameters.find((item) => item.name === 'limit')?.value,
         feed65LookupFallbackPresent: lookupNode?.parameters?.query?.includes('$1::int = 65') ?? false,
-        taoAcceptanceOverridePresent: filterNode?.parameters?.jsCode?.includes('if (isTaoSource)') ?? false,
+        taoAcceptanceOverridePresent: hasTaoAcceptanceOverride(filterNode),
         warning: 'This checks the local export, not the workflow version active in n8n.'
       },
       privateConfig: {
@@ -487,7 +487,7 @@ async function inspectN8n(entryIds, urls, workflowName) {
     const minifluxNode = liveWorkflow.nodes?.find((node) => node.name?.includes('Miniflux GET unread'));
     const scheduleNode = liveWorkflow.nodes?.find((node) => node.type === 'n8n-nodes-base.scheduleTrigger');
     const lookupNode = liveWorkflow.nodes?.find((node) => node.name?.includes('Lookup blog source'));
-    const filterNode = liveWorkflow.nodes?.find((node) => node.name?.includes('Combined filter'));
+    const filterNode = liveWorkflow.nodes?.find((node) => node.name?.includes('Combined filter') || node.name?.includes('Combined score'));
 
     return {
       result: {
@@ -501,7 +501,7 @@ async function inspectN8n(entryIds, urls, workflowName) {
           schedule: scheduleNode?.parameters?.rule?.interval?.[0]?.expression,
           unreadLimit: minifluxNode?.parameters?.queryParameters?.parameters?.find((item) => item.name === 'limit')?.value,
           feed65LookupFallbackPresent: lookupNode?.parameters?.query?.includes('$1::int = 65') ?? false,
-          taoAcceptanceOverridePresent: filterNode?.parameters?.jsCode?.includes('if (isTaoSource)') ?? false
+          taoAcceptanceOverridePresent: hasTaoAcceptanceOverride(filterNode)
         },
         searchedExecutionCount: (executionsResponse.data || executionsResponse).length,
         matchingExecutionCount: executions.length,
@@ -765,6 +765,15 @@ function relativeToBase(filename, basePath) {
 
 function quoteIdentifier(value) {
   return '"' + value.replaceAll('"', '""') + '"';
+}
+
+function hasTaoAcceptanceOverride(node) {
+  const code = node?.parameters?.jsCode || '';
+  return code.includes('isTaoSource') && (
+    code.includes('if (isTaoSource)') ||
+    code.includes('accept: isTaoSource') ||
+    code.includes('isTaoSource || score')
+  );
 }
 
 function stripExpression(value) {

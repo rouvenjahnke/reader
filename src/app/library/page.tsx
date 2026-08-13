@@ -9,9 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { loadCachedSummaries } from '@/lib/sync';
-import { applyPapersVisibility } from '@/lib/filters';
+import { applyContentMode } from '@/lib/filters';
 import { useArticleStore } from '@/stores/useArticleStore';
-import { usePreferencesStore } from '@/stores/usePreferencesStore';
 import type { ArticleSummary } from '@/types/article';
 
 type GroupMode = 'month' | 'tag' | 'source';
@@ -43,11 +42,9 @@ export default function LibraryPage(): React.ReactElement {
     });
   }, [hydrated, hydrateArticles]);
 
-  const papersVisibility = usePreferencesStore((state) => state.papersVisibility);
-
   const kept = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return applyPapersVisibility(articles, papersVisibility)
+    return applyContentMode(articles, 'articles')
       .filter((article) => {
         const status = article.frontmatter.reader_status;
         return status === 'relevant' || status === 'high_relevant';
@@ -63,7 +60,7 @@ export default function LibraryPage(): React.ReactElement {
         );
       })
       .sort(byRatedAtDesc);
-  }, [articles, query, papersVisibility]);
+  }, [articles, query]);
 
   const groups = useMemo(() => buildGroups(kept, groupMode), [kept, groupMode]);
   const highCount = kept.filter((article) => article.frontmatter.reader_status === 'high_relevant').length;

@@ -32,6 +32,7 @@ export function CommandPalette(): React.ReactElement | null {
   const listRef = useRef<HTMLDivElement | null>(null);
   const articles = useArticleStore((state) => state.articles);
   const setSortMode = useArticleStore((state) => state.setSortMode);
+  const setContentMode = useArticleStore((state) => state.setContentMode);
   const toggleGaloisOnly = useArticleStore((state) => state.toggleGaloisOnly);
   const toggleNewTodayOnly = useArticleStore((state) => state.toggleNewTodayOnly);
 
@@ -43,20 +44,21 @@ export function CommandPalette(): React.ReactElement | null {
 
   const commands = useMemo<Command[]>(
     () => [
-      { id: 'go-home', label: 'Go to article list', icon: <Newspaper className="h-4 w-4" />, run: () => router.push('/') },
-      { id: 'go-triage', label: 'Go to triage', hint: 't', icon: <ListChecks className="h-4 w-4" />, run: () => router.push('/triage') },
-      { id: 'go-library', label: 'Go to library', hint: 'b', icon: <LibraryBig className="h-4 w-4" />, run: () => router.push('/library') },
+      { id: 'go-articles', label: 'Open articles', icon: <Newspaper className="h-4 w-4" />, run: () => { setContentMode('articles'); router.push('/'); } },
+      { id: 'go-papers', label: 'Open papers', icon: <FileText className="h-4 w-4" />, run: () => { setContentMode('papers'); router.push('/'); } },
+      { id: 'go-triage', label: 'Go to article triage', hint: 't', icon: <ListChecks className="h-4 w-4" />, run: () => { setContentMode('articles'); router.push('/triage'); } },
+      { id: 'go-library', label: 'Go to article library', hint: 'b', icon: <LibraryBig className="h-4 w-4" />, run: () => { setContentMode('articles'); router.push('/library'); } },
       { id: 'go-settings', label: 'Go to settings', icon: <Settings className="h-4 w-4" />, run: () => router.push('/settings') },
       { id: 'sync', label: 'Sync now', icon: <RefreshCw className="h-4 w-4" />, run: () => window.dispatchEvent(new CustomEvent('reader:sync')) },
       { id: 'sort-newest', label: 'Sort by added date', icon: <ArrowUpDown className="h-4 w-4" />, run: () => setSortMode('newest') },
       { id: 'sort-score', label: 'Sort by score', icon: <ArrowUpDown className="h-4 w-4" />, run: () => setSortMode('score') },
       { id: 'toggle-today', label: 'Toggle filter: new today', icon: <Sparkles className="h-4 w-4" />, run: toggleNewTodayOnly },
-      { id: 'toggle-galois', label: 'Toggle filter: Galois only', icon: <Sparkles className="h-4 w-4" />, run: toggleGaloisOnly },
+      { id: 'toggle-galois', label: 'Toggle filter: Galois only', icon: <Sparkles className="h-4 w-4" />, run: () => { setContentMode('articles'); toggleGaloisOnly(); } },
       { id: 'theme-light', label: 'Theme: light', icon: <Sun className="h-4 w-4" />, run: () => setTheme('light') },
       { id: 'theme-dark', label: 'Theme: dark', icon: <Moon className="h-4 w-4" />, run: () => setTheme('dark') },
       { id: 'theme-system', label: 'Theme: system', icon: <SunMoon className="h-4 w-4" />, run: () => setTheme('system') }
     ],
-    [router, setSortMode, setTheme, toggleGaloisOnly, toggleNewTodayOnly]
+    [router, setContentMode, setSortMode, setTheme, toggleGaloisOnly, toggleNewTodayOnly]
   );
 
   const articleFuse = useMemo(
@@ -64,7 +66,11 @@ export function CommandPalette(): React.ReactElement | null {
       new Fuse(articles, {
         threshold: 0.35,
         ignoreLocation: true,
-        keys: ['frontmatter.title', 'frontmatter.author', 'frontmatter.tags', 'frontmatter.source', 'pipelineFolder', 'pipelineRelativePath', 'path']
+        keys: [
+          'frontmatter.title', 'frontmatter.author', 'frontmatter.authors', 'frontmatter.tags', 'frontmatter.source',
+          'frontmatter.arxiv_id', 'frontmatter.doi', 'frontmatter.matched_authors', 'frontmatter.matched_topics',
+          'pipelineFolder', 'pipelineRelativePath', 'path'
+        ]
       }),
     [articles]
   );
@@ -92,11 +98,14 @@ export function CommandPalette(): React.ReactElement | null {
         matchedCommands[index].run();
       } else {
         const article = matchedArticles[index - matchedCommands.length];
-        if (article) router.push(`/article/${article.id}`);
+        if (article) {
+          setContentMode(article.collection === 'papers' ? 'papers' : 'articles');
+          router.push(`/article/${article.id}`);
+        }
       }
       close();
     },
-    [close, matchedArticles, matchedCommands, router]
+    [close, matchedArticles, matchedCommands, router, setContentMode]
   );
 
   useEffect(() => {
@@ -152,7 +161,7 @@ export function CommandPalette(): React.ReactElement | null {
               runItem(activeIndex);
             }
           }}
-          placeholder="Search articles or type a command…"
+          placeholder="Search articles, papers, or commands…"
           className="border-b border-hairline bg-transparent px-4 py-3.5 font-meta text-sm outline-none placeholder:text-mutedink"
         />
         <div ref={listRef} className="overflow-y-auto p-2">
@@ -164,7 +173,7 @@ export function CommandPalette(): React.ReactElement | null {
               {command.hint ? <kbd className="theorem-label rounded-sm border border-hairline px-1.5 py-0.5 text-mutedink">{command.hint}</kbd> : null}
             </PaletteRow>
           ))}
-          {matchedArticles.length > 0 ? <p className="theorem-label px-2 pb-1 pt-3 text-mutedink">Articles</p> : null}
+          {matchedArticles.length > 0 ? <p className="theorem-label px-2 pb-1 pt-3 text-mutedink">Articles &amp; papers</p> : null}
           {matchedArticles.map((article, index) => {
             const itemIndex = matchedCommands.length + index;
             return (

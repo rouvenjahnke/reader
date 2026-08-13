@@ -3,7 +3,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
 import { appendSyncLog } from '@/lib/syncLog';
-import type { Article, ArticleSummary, PendingHighlight, PendingNote, PendingRating } from '@/types/article';
+import type { Article, ArticleSummary, PendingHighlight, PendingNote, PendingPaperStatus, PendingPin, PendingRating } from '@/types/article';
 
 interface ArticleMeta {
   id: string;
@@ -32,6 +32,14 @@ interface ReaderDb extends DBSchema {
     key: string;
     value: PendingNote;
   };
+  pending_pins: {
+    key: string;
+    value: PendingPin;
+  };
+  pending_paper_statuses: {
+    key: string;
+    value: PendingPaperStatus;
+  };
   article_meta: {
     key: string;
     value: ArticleMeta;
@@ -42,7 +50,7 @@ let dbPromise: Promise<IDBPDatabase<ReaderDb>> | null = null;
 
 function getDb(): Promise<IDBPDatabase<ReaderDb>> {
   if (!dbPromise) {
-    dbPromise = openDB<ReaderDb>('reader-db', 3, {
+    dbPromise = openDB<ReaderDb>('reader-db', 4, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const articles = db.createObjectStore('articles', { keyPath: 'id' });
@@ -56,6 +64,10 @@ function getDb(): Promise<IDBPDatabase<ReaderDb>> {
         }
         if (oldVersion < 3) {
           db.createObjectStore('pending_notes', { keyPath: 'id' });
+        }
+        if (oldVersion < 4) {
+          db.createObjectStore('pending_pins', { keyPath: 'id' });
+          db.createObjectStore('pending_paper_statuses', { keyPath: 'id' });
         }
       }
     });
@@ -203,6 +215,16 @@ export async function queueNote(note: PendingNote): Promise<void> {
   await db.put('pending_notes', note);
 }
 
+export async function queuePin(pin: PendingPin): Promise<void> {
+  const db = await getDb();
+  await db.put('pending_pins', pin);
+}
+
+export async function queuePaperStatus(status: PendingPaperStatus): Promise<void> {
+  const db = await getDb();
+  await db.put('pending_paper_statuses', status);
+}
+
 export async function updateCachedNote(id: string, note: string, updatedAt: string): Promise<void> {
   const db = await getDb();
   const tx = db.transaction(['articles', 'summaries'], 'readwrite');
@@ -225,14 +247,38 @@ export async function updateCachedNote(id: string, note: string, updatedAt: stri
   await tx.done;
 }
 
-export async function pendingQueueDepth(): Promise<{ ratings: number; highlights: number; notes: number }> {
+export async function updateCachedPin(id: string, pinned: boolean, by: string, updatedAt: string): Promise<void> {
+  await updateCachedFrontmatter(id, (frontmatter) => {
+    delete frontmatter.reader_priority;
+    if (pinned) {
+      frontmatter.reader_pinned = true;
+      frontmatter.reader_pinned_by = by;
+      frontmatter.reader_pinned_at = updatedAt;
+    } else {
+      delete frontmatter.reader_pinned;
+      delete frontmatter.reader_pinned_by;
+      delete frontmatter.reader_pinned_at;
+    }
+  });
+}
+
+export async function updateCachedPaperStatus(id: string, status: PendingPaperStatus['status'], updatedAt: string): Promise<void> {
+  await updateCachedFrontmatter(id, (frontmatter) => {
+    frontmatter.paper_status = status;
+    frontmatter.paper_status_updated_at = updatedAt;
+  });
+}
+
+export async function pendingQueueDepth(): Promise<{ ratings: number; highlights: number; notes: number; pins: number; paperStatuses: number }> {
   const db = await getDb();
-  const [ratings, highlights, notes] = await Promise.all([
+  const [ratings, highlights, notes, pins, paperStatuses] = await Promise.all([
     db.count('pending_ratings'),
     db.count('pending_highlights'),
-    db.count('pending_notes')
+    db.count('pending_notes'),
+    db.count('pending_pins'),
+    db.count('pending_paper_statuses')
   ]);
-  return { ratings, highlights, notes };
+  return { ratings, highlights, notes, pins, paperStatuses };
 }
 
 export async function flushPendingQueues(): Promise<void> {
@@ -278,6 +324,44 @@ export async function flushPendingQueues(): Promise<void> {
     }
   }
 
+  const pins = await db.getAll('pending_pins');
+  for (const pin of pins) {
+    try {
+      const response = await fetch(`/api/articles/${pin.id}/pin`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pinned: pin.pinned, by: pin.by })
+      });
+      if (response.ok) {
+        await db.delete('pending_pins', pin.id);
+        appendSyncLog('info', `Pin synced: ${pin.path}`);
+      } else {
+        appendSyncLog('error', `Pin sync failed: ${pin.path} (${response.status})`);
+      }
+    } catch (error) {
+      appendSyncLog('error', `Pin sync failed: ${pin.path} (${errorMessage(error)})`);
+    }
+  }
+
+  const paperStatuses = await db.getAll('pending_paper_statuses');
+  for (const paperStatus of paperStatuses) {
+    try {
+      const response = await fetch(`/api/articles/${paperStatus.id}/paper-status`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: paperStatus.status })
+      });
+      if (response.ok) {
+        await db.delete('pending_paper_statuses', paperStatus.id);
+        appendSyncLog('info', `Paper status synced: ${paperStatus.path}`);
+      } else {
+        appendSyncLog('error', `Paper status sync failed: ${paperStatus.path} (${response.status})`);
+      }
+    } catch (error) {
+      appendSyncLog('error', `Paper status sync failed: ${paperStatus.path} (${errorMessage(error)})`);
+    }
+  }
+
   for (const highlight of highlights) {
     const articleId = highlight.articleId || highlight.id;
     try {
@@ -300,6 +384,21 @@ export async function flushPendingQueues(): Promise<void> {
       appendSyncLog('error', `Highlight sync failed: ${highlight.path} (${errorMessage(error)})`);
     }
   }
+}
+
+async function updateCachedFrontmatter(id: string, update: (frontmatter: Article['frontmatter']) => void): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction(['articles', 'summaries'], 'readwrite');
+  const [article, summary] = await Promise.all([tx.objectStore('articles').get(id), tx.objectStore('summaries').get(id)]);
+  if (article) {
+    update(article.frontmatter);
+    await tx.objectStore('articles').put(article);
+  }
+  if (summary) {
+    update(summary.frontmatter);
+    await tx.objectStore('summaries').put(summary);
+  }
+  await tx.done;
 }
 
 function errorMessage(error: unknown): string {

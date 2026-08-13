@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
 import { priorityValue } from '@/lib/filters';
-import type { ArticleSummary, ReaderStatus } from '@/types/article';
+import type { ArticleSummary, PaperStatus, ReaderStatus } from '@/types/article';
 
 interface Props {
   article: ArticleSummary;
@@ -17,8 +17,13 @@ export function ArticleListItem({ article, isNew, style }: Props): React.ReactEl
   const status = fm.reader_status ?? 'unrated';
   const priority = priorityValue(article);
   const duplicateCount = article.duplicates?.length ?? 0;
+  const isPaper = article.collection === 'papers';
+  const paperStatus = fm.paper_status ?? 'inbox';
 
-  const metaLine = [fm.source, fm.author, relativeDate(article.firstSeenAt ?? fm.fetched ?? article.lastModified ?? fm.published)].filter(Boolean).join(' · ');
+  const authors = fm.authors?.length ? fm.authors.join(', ') : fm.author;
+  const metaLine = isPaper
+    ? [authors, fm.arxiv_id ? `arXiv:${fm.arxiv_id}` : fm.doi ? `DOI:${fm.doi}` : fm.source, relativeDate(article.firstSeenAt ?? fm.fetched ?? article.lastModified ?? fm.published)].filter(Boolean).join(' · ')
+    : [fm.source, fm.author, relativeDate(article.firstSeenAt ?? fm.fetched ?? article.lastModified ?? fm.published)].filter(Boolean).join(' · ');
 
   return (
     <div style={style} className="px-4">
@@ -34,14 +39,21 @@ export function ArticleListItem({ article, isNew, style }: Props): React.ReactEl
         </div>
         <p className="truncate font-meta text-[11px] text-mutedink">{metaLine}</p>
         <div className="flex items-center gap-1.5 overflow-hidden whitespace-nowrap">
-          {article.collection === 'papers' ? <Badge className="border-[var(--accent)] text-[var(--accent)]">paper</Badge> : null}
-          {article.pipelineFolder ? <Badge>{article.pipelineFolder}</Badge> : null}
+          {isPaper ? <Badge className={paperStatusClass(paperStatus)}>{paperStatusLabel(paperStatus)}</Badge> : null}
+          {isPaper && fm.primary_category ? <Badge>{fm.primary_category}</Badge> : null}
+          {isPaper && fm.matched_authors?.length ? <Badge className="border-[var(--positive)] text-[var(--positive)]">watched author</Badge> : null}
+          {isPaper && fm.matched_topics?.length ? <Badge className="border-[var(--accent)] text-[var(--accent)]">watched topic</Badge> : null}
+          {!isPaper && article.pipelineFolder ? <Badge>{article.pipelineFolder}</Badge> : null}
           {isNew ? <Badge className="border-[var(--positive)] text-[var(--positive)]">new</Badge> : null}
-          {priority > 0 ? <Badge className="border-amber-600/60 text-amber-700 dark:border-amber-400/60 dark:text-amber-300">prio {priority}</Badge> : null}
+          {priority > 0 ? (
+            <Badge className="border-amber-600/60 text-amber-700 dark:border-amber-400/60 dark:text-amber-300" title={fm.reader_pinned_by ? `Pinned by ${fm.reader_pinned_by}` : 'Pinned'}>
+              pinned
+            </Badge>
+          ) : null}
           {duplicateCount > 0 ? (
             <Badge title={article.duplicates?.map((dup) => dup.path).join('\n')}>+{duplicateCount} dup</Badge>
           ) : null}
-          {status !== 'unrated' ? <Badge className={statusClass(status)}>{statusLabel(status)}</Badge> : null}
+          {!isPaper && status !== 'unrated' ? <Badge className={statusClass(status)}>{statusLabel(status)}</Badge> : null}
           {fm.tags?.slice(0, 3).map((tag) => (
             <Badge key={tag} className="hidden sm:inline-flex">{tag}</Badge>
           ))}
@@ -49,6 +61,21 @@ export function ArticleListItem({ article, isNew, style }: Props): React.ReactEl
       </Link>
     </div>
   );
+}
+
+function paperStatusLabel(status: PaperStatus): string {
+  if (status === 'skimmed') return 'skimmed';
+  if (status === 'reading') return 'reading';
+  if (status === 'reference') return 'reference';
+  if (status === 'dismissed') return 'dismissed';
+  return 'inbox';
+}
+
+function paperStatusClass(status: PaperStatus): string {
+  if (status === 'reading') return 'border-[var(--accent)] text-[var(--accent)]';
+  if (status === 'reference') return 'border-[var(--positive)] text-[var(--positive)]';
+  if (status === 'dismissed') return 'border-[var(--destructive)] text-[var(--destructive)]';
+  return '';
 }
 
 function statusLabel(status: ReaderStatus): string {

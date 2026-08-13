@@ -1,26 +1,39 @@
 import Fuse from 'fuse.js';
 
-import type { ArticleFilters, ArticleSummary, PapersVisibility, ReaderStatus } from '@/types/article';
+import type { ArticleFilters, ArticleSummary, ContentMode, PapersVisibility, ReaderStatus } from '@/types/article';
 
 const defaultStatuses: ReaderStatus[] = ['unrated'];
 
 /** Source name behind the "Galois" quick filter chip. */
 export const PRIORITY_SOURCE = 'galois';
 
-export const defaultFilters: ArticleFilters = {
+export const defaultArticleFilters: ArticleFilters = {
   sortMode: 'newest',
   statuses: defaultStatuses,
+  paperStatuses: [],
   sources: [],
   tags: [],
   folders: [],
+  watchedAuthors: [],
+  watchedTopics: [],
   query: '',
   galoisOnly: false,
   newTodayOnly: false,
   showDuplicates: false
 };
 
+export const defaultPaperFilters: ArticleFilters = {
+  ...defaultArticleFilters,
+  statuses: [],
+  paperStatuses: ['inbox', 'reading']
+};
+
+/** Backwards-compatible name for article-mode defaults. */
+export const defaultFilters = defaultArticleFilters;
+
 export interface SortPreferences {
   pinPriorityOnTop?: boolean;
+  contentMode?: ContentMode;
 }
 
 const DAY_MS = 86_400_000;
@@ -31,15 +44,24 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
   const activeSources = new Set(filters.sources);
   const activeTags = new Set(filters.tags ?? []);
   const activeFolders = new Set(filters.folders ?? []);
+  const activeWatchedAuthors = new Set(filters.watchedAuthors ?? []);
+  const activeWatchedTopics = new Set(filters.watchedTopics ?? []);
   const pinPriority = prefs.pinPriorityOnTop ?? true;
   const newCutoff = Date.now() - DAY_MS;
 
   let result = articles.filter((article) => {
-    const status = article.frontmatter.reader_status ?? 'unrated';
-    if (!activeStatuses.includes(status)) return false;
+    if (prefs.contentMode === 'papers') {
+      const status = article.frontmatter.paper_status ?? 'inbox';
+      if (!(filters.paperStatuses ?? []).includes(status)) return false;
+    } else {
+      const status = article.frontmatter.reader_status ?? 'unrated';
+      if (!activeStatuses.includes(status)) return false;
+    }
     if (activeSources.size > 0 && !activeSources.has(article.frontmatter.source ?? '')) return false;
     if (activeTags.size > 0 && !(article.frontmatter.tags ?? []).some((tag) => activeTags.has(tag))) return false;
     if (activeFolders.size > 0 && !activeFolders.has(article.pipelineFolder ?? '')) return false;
+    if (activeWatchedAuthors.size > 0 && !(article.frontmatter.matched_authors ?? []).some((author) => activeWatchedAuthors.has(author))) return false;
+    if (activeWatchedTopics.size > 0 && !(article.frontmatter.matched_topics ?? []).some((topic) => activeWatchedTopics.has(topic))) return false;
     if (filters.galoisOnly && !isGalois(article)) return false;
     if (filters.newTodayOnly && !isNewSince(article, newCutoff)) return false;
     return true;
@@ -50,7 +72,11 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
     const fuse = new Fuse(result, {
       threshold: 0.35,
       ignoreLocation: true,
-      keys: ['frontmatter.title', 'frontmatter.author', 'frontmatter.source', 'frontmatter.tags', 'pipelineFolder', 'pipelineRelativePath', 'path']
+      keys: [
+        'frontmatter.title', 'frontmatter.author', 'frontmatter.authors', 'frontmatter.source', 'frontmatter.tags',
+        'frontmatter.arxiv_id', 'frontmatter.doi', 'frontmatter.primary_category', 'frontmatter.matched_authors', 'frontmatter.matched_topics',
+        'pipelineFolder', 'pipelineRelativePath', 'path'
+      ]
     });
     result = fuse.search(query).map((entry) => entry.item);
   }
@@ -83,6 +109,12 @@ export function applyPapersVisibility(articles: ArticleSummary[], visibility: Pa
   return articles;
 }
 
+export function applyContentMode(articles: ArticleSummary[], mode: ContentMode): ArticleSummary[] {
+  return mode === 'papers'
+    ? articles.filter((article) => article.collection === 'papers')
+    : articles.filter((article) => article.collection !== 'papers');
+}
+
 export function collectSources(articles: ArticleSummary[]): string[] {
   return Array.from(new Set(articles.map((article) => article.frontmatter.source).filter((source): source is string => Boolean(source)))).sort(
     compareFilterOption
@@ -99,6 +131,14 @@ export function collectFolders(articles: ArticleSummary[]): string[] {
   return Array.from(new Set(articles.map((article) => article.pipelineFolder).filter((folder): folder is string => Boolean(folder)))).sort(
     compareFilterOption
   );
+}
+
+export function collectWatchedAuthors(articles: ArticleSummary[]): string[] {
+  return Array.from(new Set(articles.flatMap((article) => article.frontmatter.matched_authors ?? []))).sort(compareFilterOption);
+}
+
+export function collectWatchedTopics(articles: ArticleSummary[]): string[] {
+  return Array.from(new Set(articles.flatMap((article) => article.frontmatter.matched_topics ?? []))).sort(compareFilterOption);
 }
 
 function compareFilterOption(a: string, b: string): number {
@@ -124,12 +164,11 @@ export function nextUnratedAfter(articles: ArticleSummary[], currentId: string):
 }
 
 /**
- * Priority applies to every source: the categorization workflow decides which
- * articles carry `reader_priority` / `reader_pinned`, not the app.
+ * A deliberate pin is the only priority signal. Numeric `reader_priority` from
+ * older pipelines is ignored so automatic scores cannot silently override sort mode.
  */
 export function priorityValue(article: ArticleSummary): number {
-  if (typeof article.frontmatter.reader_priority === 'number') return article.frontmatter.reader_priority;
-  if (article.frontmatter.reader_pinned === true) return 100;
+  if (article.frontmatter.reader_pinned === true) return 1;
   return 0;
 }
 

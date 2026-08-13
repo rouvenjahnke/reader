@@ -1,6 +1,6 @@
 import matter from 'gray-matter';
 
-import type { ArticleFrontmatter, ReaderStatus } from '@/types/article';
+import type { ArticleFrontmatter, PaperStatus, ReaderStatus } from '@/types/article';
 
 export function parseArticle(raw: string): { frontmatter: ArticleFrontmatter; body: string } {
   const parsed = parseMatter(raw);
@@ -13,15 +13,30 @@ export function parseArticle(raw: string): { frontmatter: ArticleFrontmatter; bo
       url: normalizeString(data.url),
       source: normalizeString(data.source),
       author: normalizeString(data.author),
+      authors: normalizeStringArray(data.authors),
       arxiv_id: normalizeString(data.arxiv_id),
+      doi: normalizeString(data.doi),
+      pdf_url: normalizeString(data.pdf_url),
+      html_url: normalizeString(data.html_url),
       published: normalizeString(data.published),
       fetched: normalizeString(data.fetched),
       tags: normalizeTags(data.tags),
-      score: normalizeNumber(data.score),
+      score: normalizeScore(data.score),
+      content_score: normalizeScore(data.content_score),
+      source_priority: normalizeScore(data.source_priority),
+      scoring_version: normalizeString(data.scoring_version),
       priority: normalizeNumber(data.priority),
+      all_categories: normalizeStringArray(data.all_categories),
+      matched_authors: normalizeStringArray(data.matched_authors),
+      matched_topics: normalizeStringArray(data.matched_topics),
+      key_concepts: normalizeStringArray(data.key_concepts),
       reader_priority: normalizeReaderPriority(data.reader_priority),
       reader_pinned: normalizeBoolean(data.reader_pinned),
+      reader_pinned_by: normalizeString(data.reader_pinned_by),
+      reader_pinned_at: normalizeString(data.reader_pinned_at),
       reader_status: normalizeReaderStatus(data.reader_status),
+      paper_status: normalizePaperStatus(data.paper_status),
+      paper_status_updated_at: normalizeString(data.paper_status_updated_at),
       reader_note: normalizeString(data.reader_note)
     },
     body: parsed.content
@@ -42,6 +57,29 @@ export function setRating(raw: string, status: Exclude<ReaderStatus, 'unrated'>,
   const parsed = parseMatter(raw);
   parsed.data.reader_status = status;
   parsed.data.reader_rated_at = ratedAt.toISOString();
+  return matter.stringify(parsed.content, parsed.data);
+}
+
+export function setPinned(raw: string, pinned: boolean, by = 'reader', updatedAt = new Date()): string {
+  const parsed = parseMatter(raw);
+  if (pinned) {
+    parsed.data.reader_pinned = true;
+    parsed.data.reader_pinned_by = by.trim() || 'reader';
+    parsed.data.reader_pinned_at = updatedAt.toISOString();
+  } else {
+    delete parsed.data.reader_pinned;
+    delete parsed.data.reader_pinned_by;
+    delete parsed.data.reader_pinned_at;
+  }
+  // Automatic numeric ranking is obsolete. A deliberate pin is the only priority signal.
+  delete parsed.data.reader_priority;
+  return matter.stringify(parsed.content, parsed.data);
+}
+
+export function setPaperStatus(raw: string, status: PaperStatus, updatedAt = new Date()): string {
+  const parsed = parseMatter(raw);
+  parsed.data.paper_status = status;
+  parsed.data.paper_status_updated_at = updatedAt.toISOString();
   return matter.stringify(parsed.content, parsed.data);
 }
 
@@ -475,8 +513,12 @@ function normalizeMath(value: string): string {
 }
 
 function normalizeTags(value: unknown): string[] {
+  return normalizeStringArray(value);
+}
+
+function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim());
 }
 
 function normalizeNumber(value: unknown): number | undefined {
@@ -493,6 +535,12 @@ function normalizeReaderPriority(value: unknown): number | undefined {
   return normalizeNumber(value);
 }
 
+function normalizeScore(value: unknown): number | undefined {
+  const score = normalizeNumber(value);
+  if (score === undefined) return undefined;
+  return Math.max(0, Math.min(10, score));
+}
+
 function normalizeBoolean(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'string') {
@@ -506,4 +554,9 @@ function normalizeBoolean(value: unknown): boolean | undefined {
 function normalizeReaderStatus(value: unknown): ReaderStatus {
   if (value === 'irrelevant' || value === 'relevant' || value === 'high_relevant') return value;
   return 'unrated';
+}
+
+function normalizePaperStatus(value: unknown): PaperStatus {
+  if (value === 'skimmed' || value === 'reading' || value === 'reference' || value === 'dismissed') return value;
+  return 'inbox';
 }

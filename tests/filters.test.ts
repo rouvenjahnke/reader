@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applyPapersVisibility,
+  applyContentMode,
   collectFolders,
   collectSources,
   collectTags,
+  collectWatchedAuthors,
+  collectWatchedTopics,
   dedupeArticles,
   estimateReadingMinutes,
   filterAndSortArticles,
@@ -17,9 +20,12 @@ import type { ArticleFilters, ArticleSummary } from '@/types/article';
 const baseFilters: ArticleFilters = {
   sortMode: 'newest',
   statuses: ['unrated'],
+  paperStatuses: [],
   sources: [],
   tags: [],
   folders: [],
+  watchedAuthors: [],
+  watchedTopics: [],
   query: '',
   galoisOnly: false,
   newTodayOnly: false,
@@ -64,7 +70,8 @@ const articles: ArticleSummary[] = [
       score: 1,
       tags: ['capture'],
       reader_status: 'unrated',
-      reader_priority: 200
+      reader_priority: 200,
+      reader_pinned: true
     }
   }
 ];
@@ -192,21 +199,21 @@ describe('filters', () => {
 });
 
 describe('priorityValue', () => {
-  it('honours reader_priority on every source', () => {
-    const galois: ArticleSummary = { ...articles[2] };
+  it('ignores legacy numeric reader_priority on every source', () => {
+    const galois: ArticleSummary = { ...articles[2], frontmatter: { ...articles[2].frontmatter, reader_pinned: false } };
     const nonGalois: ArticleSummary = {
-      ...articles[2],
+      ...galois,
       id: 'd',
       path: '/d.md',
-      frontmatter: { ...articles[2].frontmatter, source: 'arXiv' }
+      frontmatter: { ...galois.frontmatter, source: 'arXiv' }
     };
-    expect(priorityValue(galois)).toBe(200);
-    expect(priorityValue(nonGalois)).toBe(200);
+    expect(priorityValue(galois)).toBe(0);
+    expect(priorityValue(nonGalois)).toBe(0);
     expect(isGalois(galois)).toBe(true);
     expect(isGalois(nonGalois)).toBe(false);
   });
 
-  it('treats reader_pinned as priority 100 regardless of source', () => {
+  it('treats reader_pinned as the only priority signal regardless of source', () => {
     const pinnedGalois: ArticleSummary = {
       id: 'g1',
       path: '/g1.md',
@@ -217,8 +224,55 @@ describe('priorityValue', () => {
       path: '/g2.md',
       frontmatter: { title: 'x', source: 'arXiv', reader_pinned: true }
     };
-    expect(priorityValue(pinnedGalois)).toBe(100);
-    expect(priorityValue(pinnedOther)).toBe(100);
+    expect(priorityValue(pinnedGalois)).toBe(1);
+    expect(priorityValue(pinnedOther)).toBe(1);
+  });
+});
+
+describe('content modes and paper workflow', () => {
+  const blog: ArticleSummary = { id: 'blog', path: '/math_blogs/a.md', frontmatter: { title: 'Blog' } };
+  const inbox: ArticleSummary = {
+    id: 'inbox', path: '/math_preprints/a.md', collection: 'papers', frontmatter: { title: 'Inbox paper', paper_status: 'inbox' }
+  };
+  const reference: ArticleSummary = {
+    id: 'reference', path: '/ml_papers/b.md', collection: 'papers', frontmatter: {
+      title: 'Reference paper', paper_status: 'reference', matched_authors: ['Peter Scholze'], matched_topics: ['Prismatic cohomology']
+    }
+  };
+
+  it('separates articles and papers without relying on a folder visibility preference', () => {
+    expect(applyContentMode([blog, inbox, reference], 'articles').map((article) => article.id)).toEqual(['blog']);
+    expect(applyContentMode([blog, inbox, reference], 'papers').map((article) => article.id)).toEqual(['inbox', 'reference']);
+  });
+
+  it('filters papers by workflow stage instead of article rating', () => {
+    const filters: ArticleFilters = { ...baseFilters, statuses: [], paperStatuses: ['reference'] };
+    expect(filterAndSortArticles([inbox, reference], filters, { contentMode: 'papers' }).map((article) => article.id)).toEqual(['reference']);
+  });
+
+  it('collects and filters watched authors separately from watched topics', () => {
+    const wavelet: ArticleSummary = {
+      id: 'wavelet', path: '/math_preprints/wavelet.md', collection: 'papers', frontmatter: {
+        title: 'Wavelet paper', paper_status: 'inbox', matched_authors: ['Ingrid Daubechies'], matched_topics: ['Harmonic analysis']
+      }
+    };
+
+    expect(collectWatchedAuthors([inbox, reference, wavelet])).toEqual(['Ingrid Daubechies', 'Peter Scholze']);
+    expect(collectWatchedTopics([inbox, reference, wavelet])).toEqual(['Harmonic analysis', 'Prismatic cohomology']);
+
+    const byAuthor: ArticleFilters = {
+      ...baseFilters,
+      statuses: [],
+      paperStatuses: ['inbox', 'reference'],
+      watchedAuthors: ['Peter Scholze']
+    };
+    expect(filterAndSortArticles([inbox, reference, wavelet], byAuthor, { contentMode: 'papers' }).map((article) => article.id)).toEqual(['reference']);
+
+    const byTopic: ArticleFilters = { ...byAuthor, watchedAuthors: [], watchedTopics: ['Harmonic analysis'] };
+    expect(filterAndSortArticles([inbox, reference, wavelet], byTopic, { contentMode: 'papers' }).map((article) => article.id)).toEqual(['wavelet']);
+
+    const byBoth: ArticleFilters = { ...byAuthor, watchedTopics: ['Harmonic analysis'] };
+    expect(filterAndSortArticles([inbox, reference, wavelet], byBoth, { contentMode: 'papers' })).toEqual([]);
   });
 });
 

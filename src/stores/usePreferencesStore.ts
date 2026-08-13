@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import type { ArticleSortMode, PapersVisibility, ReaderStatus } from '@/types/article';
+import type { ArticleSortMode, ReaderStatus } from '@/types/article';
 
 export type FontSize = 'S' | 'M' | 'L' | 'XL';
 
@@ -14,8 +14,6 @@ export interface ReaderPreferences {
   pinPriorityOnTop: boolean;
   /** Visual theme applied via html[data-design]. */
   designTheme: DesignTheme;
-  /** How articles from the optional papers folder are shown. */
-  papersVisibility: PapersVisibility;
   autoSyncOnOpen: boolean;
   bodyPrefetch: boolean;
   syncIntervalMinutes: number;
@@ -36,7 +34,6 @@ export interface ReaderPreferences {
 export const defaultPreferences: ReaderPreferences = {
   pinPriorityOnTop: true,
   designTheme: 'preprint',
-  papersVisibility: 'shown',
   autoSyncOnOpen: true,
   bodyPrefetch: true,
   syncIntervalMinutes: 30,
@@ -82,6 +79,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
           }
           delete state.pinGaloisOnTop;
         }
+        delete state.papersVisibility;
         return state as never;
       }
     }

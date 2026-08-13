@@ -6,6 +6,8 @@ import {
   parseArticle,
   removeHighlight,
   removeHighlightInBody,
+  setPaperStatus,
+  setPinned,
   setRating
 } from '@/lib/frontmatter';
 
@@ -49,6 +51,47 @@ Body`;
     expect(updated).toContain('reader_status: relevant');
     expect(updated).toContain("reader_rated_at: '2026-05-20T12:00:00.000Z'");
     expect(updated).toContain('This is selected text.');
+  });
+
+  it('uses deliberate pinning and removes a legacy automatic rank', () => {
+    const pinned = setPinned(raw, true, 'openclaw', new Date('2026-08-13T08:00:00.000Z'));
+    const parsed = parseArticle(pinned);
+    expect(parsed.frontmatter.reader_pinned).toBe(true);
+    expect(parsed.frontmatter.reader_pinned_by).toBe('openclaw');
+    expect(parsed.frontmatter.reader_pinned_at).toBe('2026-08-13T08:00:00.000Z');
+    expect(parsed.frontmatter.reader_priority).toBeUndefined();
+
+    expect(parseArticle(setPinned(pinned, false)).frontmatter.reader_pinned).toBeUndefined();
+  });
+
+  it('sets a paper workflow status', () => {
+    const updated = setPaperStatus(raw, 'reading', new Date('2026-08-13T09:00:00.000Z'));
+    const parsed = parseArticle(updated);
+    expect(parsed.frontmatter.paper_status).toBe('reading');
+    expect(parsed.frontmatter.paper_status_updated_at).toBe('2026-08-13T09:00:00.000Z');
+  });
+
+  it('clamps pipeline scores to the documented 0-10 range', () => {
+    expect(parseArticle('---\ntitle: High\nscore: 108\ncontent_score: -2\n---\n').frontmatter).toMatchObject({ score: 10, content_score: 0 });
+  });
+
+  it('normalizes paper provenance used by the watchlist UI', () => {
+    const paper = parseArticle(`---
+title: Watched paper
+source_priority: "9"
+scoring_version: content-85_source-15_v1
+matched_authors: [Peter Scholze]
+matched_topics: [Prismatic cohomology]
+paper_status: reference
+---
+`).frontmatter;
+    expect(paper).toMatchObject({
+      source_priority: 9,
+      scoring_version: 'content-85_source-15_v1',
+      matched_authors: ['Peter Scholze'],
+      matched_topics: ['Prismatic cohomology'],
+      paper_status: 'reference'
+    });
   });
 
   it('adds Obsidian markdown highlights', () => {

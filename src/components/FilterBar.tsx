@@ -1,21 +1,28 @@
 'use client';
 
-import { CheckCheck, ChevronDown, ChevronUp, CircleOff, Clock, Command, Layers, LibraryBig, ListChecks, RefreshCw, Search, Settings, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+import { CheckCheck, ChevronDown, ChevronUp, CircleOff, Clock, Command, FileText, Layers, LibraryBig, ListChecks, Newspaper, RefreshCw, Search, Settings, SlidersHorizontal, Sparkles, UserRound, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { collectFolders, collectSources, collectTags, defaultFilters, isGalois, PRIORITY_SOURCE } from '@/lib/filters';
+import { collectFolders, collectSources, collectTags, collectWatchedAuthors, collectWatchedTopics, defaultArticleFilters, defaultPaperFilters, isGalois, PRIORITY_SOURCE } from '@/lib/filters';
 import { useArticleStore } from '@/stores/useArticleStore';
-import { usePreferencesStore } from '@/stores/usePreferencesStore';
-import type { ArticleFilters, ArticleSummary, ReaderStatus } from '@/types/article';
+import type { ArticleFilters, ArticleSummary, ContentMode, PaperStatus, ReaderStatus } from '@/types/article';
 
 const statuses: Array<{ value: ReaderStatus; label: string }> = [
   { value: 'unrated', label: 'Unrated' },
   { value: 'relevant', label: 'Relevant' },
   { value: 'high_relevant', label: 'High' },
   { value: 'irrelevant', label: 'Irrelevant' }
+];
+
+const paperStatuses: Array<{ value: PaperStatus; label: string }> = [
+  { value: 'inbox', label: 'Inbox' },
+  { value: 'skimmed', label: 'Skimmed' },
+  { value: 'reading', label: 'Reading' },
+  { value: 'reference', label: 'Reference' },
+  { value: 'dismissed', label: 'Dismissed' }
 ];
 
 export interface FilterBarMeta {
@@ -42,38 +49,54 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [foldersOpen, setFoldersOpen] = useState(false);
+  const [authorsOpen, setAuthorsOpen] = useState(false);
+  const [topicsOpen, setTopicsOpen] = useState(false);
   const [sourceQuery, setSourceQuery] = useState('');
   const [tagQuery, setTagQuery] = useState('');
   const [folderQuery, setFolderQuery] = useState('');
+  const [authorQuery, setAuthorQuery] = useState('');
+  const [topicQuery, setTopicQuery] = useState('');
   const filters = useArticleStore((state) => state.filters);
+  const contentMode = useArticleStore((state) => state.contentMode);
+  const setContentMode = useArticleStore((state) => state.setContentMode);
   const setSortMode = useArticleStore((state) => state.setSortMode);
   const setQuery = useArticleStore((state) => state.setQuery);
   const toggleGaloisOnly = useArticleStore((state) => state.toggleGaloisOnly);
   const toggleNewTodayOnly = useArticleStore((state) => state.toggleNewTodayOnly);
   const toggleShowDuplicates = useArticleStore((state) => state.toggleShowDuplicates);
   const toggleStatus = useArticleStore((state) => state.toggleStatus);
+  const togglePaperStatus = useArticleStore((state) => state.togglePaperStatus);
   const toggleSource = useArticleStore((state) => state.toggleSource);
   const toggleTag = useArticleStore((state) => state.toggleTag);
   const toggleFolder = useArticleStore((state) => state.toggleFolder);
+  const toggleWatchedAuthor = useArticleStore((state) => state.toggleWatchedAuthor);
+  const toggleWatchedTopic = useArticleStore((state) => state.toggleWatchedTopic);
   const resetFilters = useArticleStore((state) => state.resetFilters);
   const sources = collectSources(articles);
   const tags = collectTags(articles);
   const folders = collectFolders(articles);
+  const watchedAuthors = collectWatchedAuthors(articles);
+  const watchedTopics = collectWatchedTopics(articles);
   const filteredSources = filterOptions(sources, sourceQuery);
   const filteredTags = filterOptions(tags, tagQuery);
   const filteredFolders = filterOptions(folders, folderQuery);
+  const filteredAuthors = filterOptions(watchedAuthors, authorQuery);
+  const filteredTopics = filterOptions(watchedTopics, topicQuery);
   const sourceCounts = countOptions(articles, (article) => (article.frontmatter.source ? [article.frontmatter.source] : []));
   const tagCounts = countOptions(articles, (article) => article.frontmatter.tags ?? []);
   const folderCounts = countOptions(articles, (article) => (article.pipelineFolder ? [article.pipelineFolder] : []));
+  const authorCounts = countOptions(articles, (article) => article.frontmatter.matched_authors ?? []);
+  const topicCounts = countOptions(articles, (article) => article.frontmatter.matched_topics ?? []);
   const selectedTags = filters.tags ?? [];
   const selectedFolders = filters.folders ?? [];
+  const selectedAuthors = filters.watchedAuthors ?? [];
+  const selectedTopics = filters.watchedTopics ?? [];
   const hasGalois = articles.some(isGalois);
-  const papersVisibility = usePreferencesStore((state) => state.papersVisibility);
-  const setPreference = usePreferencesStore((state) => state.setPreference);
-  const hasPapers = articles.some((article) => article.collection === 'papers');
-  const hasActiveFilters = isFiltering(filters, papersVisibility);
+  const hasActiveFilters = isFiltering(filters, contentMode);
   const allStatuses = statuses.map((status) => status.value);
   const allStatusesSelected = allStatuses.every((status) => filters.statuses.includes(status));
+  const allPaperStatuses = paperStatuses.map((status) => status.value);
+  const allPaperStatusesSelected = allPaperStatuses.every((status) => filters.paperStatuses.includes(status));
 
   return (
     <div className="reader-surface-bar sticky top-0 z-20 border-b px-2 py-2 text-ink shadow-[0_1px_0_var(--border)] sm:px-3 sm:py-3">
@@ -120,27 +143,31 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           <Button type="button" size="icon" variant="secondary" onClick={onRefresh} disabled={meta.syncing} aria-label="Sync">
             <RefreshCw className={`h-4 w-4 ${meta.syncing ? 'animate-spin' : ''}`} />
           </Button>
-          <Link
-            href="/triage"
-            className="relative hidden h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted sm:inline-flex"
-            aria-label="Triage mode"
-            title="Triage unrated articles (t)"
-          >
-            <ListChecks className="h-4 w-4" />
-            {meta.unratedCount > 0 ? (
-              <span className="theorem-label absolute -right-1 -top-1 rounded-sm border border-hairline bg-paper px-1 text-mutedink">
-                {meta.unratedCount > 99 ? '99+' : meta.unratedCount}
-              </span>
-            ) : null}
-          </Link>
-          <Link
-            href="/library"
-            className="hidden h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted sm:inline-flex"
-            aria-label="Library"
-            title="Library of rated articles (b)"
-          >
-            <LibraryBig className="h-4 w-4" />
-          </Link>
+          {contentMode === 'articles' ? (
+            <>
+              <Link
+                href="/triage"
+                className="relative hidden h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted sm:inline-flex"
+                aria-label="Triage mode"
+                title="Triage unrated articles (t)"
+              >
+                <ListChecks className="h-4 w-4" />
+                {meta.unratedCount > 0 ? (
+                  <span className="theorem-label absolute -right-1 -top-1 rounded-sm border border-hairline bg-paper px-1 text-mutedink">
+                    {meta.unratedCount > 99 ? '99+' : meta.unratedCount}
+                  </span>
+                ) : null}
+              </Link>
+              <Link
+                href="/library"
+                className="hidden h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted sm:inline-flex"
+                aria-label="Library"
+                title="Library of rated articles (b)"
+              >
+                <LibraryBig className="h-4 w-4" />
+              </Link>
+            </>
+          ) : null}
           <Link
             href="/settings"
             className="hidden h-11 w-11 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted sm:inline-flex"
@@ -150,24 +177,37 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           </Link>
         </div>
 
+        <div className="grid h-9 grid-cols-2 rounded-sm border border-hairline bg-surface p-0.5" aria-label="Reader content type">
+          <ModeButton mode="articles" current={contentMode} onClick={setContentMode} icon={<Newspaper className="h-3.5 w-3.5" />}>
+            Articles
+          </ModeButton>
+          <ModeButton mode="papers" current={contentMode} onClick={setContentMode} icon={<FileText className="h-3.5 w-3.5" />}>
+            Papers
+          </ModeButton>
+        </div>
+
         <div
           id="mobile-filter-controls"
           className={`${mobileFiltersOpen ? 'flex' : 'hidden'} max-h-[calc(100dvh-4.75rem)] flex-col gap-2.5 overflow-y-auto overscroll-contain sm:flex sm:max-h-none sm:overflow-visible`}
         >
           <div className="flex items-center gap-2 border-t border-hairline pt-2 sm:hidden">
-            <Link
-              href="/triage"
-              className="relative inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-sm border border-hairline bg-surface px-2 text-sm font-medium text-ink transition hover:bg-surface-muted"
-            >
-              <ListChecks className="h-4 w-4" /> Triage
-              {meta.unratedCount > 0 ? <span className="font-meta text-[10px] text-mutedink">{meta.unratedCount > 99 ? '99+' : meta.unratedCount}</span> : null}
-            </Link>
-            <Link
-              href="/library"
-              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-sm border border-hairline bg-surface px-2 text-sm font-medium text-ink transition hover:bg-surface-muted"
-            >
-              <LibraryBig className="h-4 w-4" /> Library
-            </Link>
+            {contentMode === 'articles' ? (
+              <>
+                <Link
+                  href="/triage"
+                  className="relative inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-sm border border-hairline bg-surface px-2 text-sm font-medium text-ink transition hover:bg-surface-muted"
+                >
+                  <ListChecks className="h-4 w-4" /> Triage
+                  {meta.unratedCount > 0 ? <span className="font-meta text-[10px] text-mutedink">{meta.unratedCount > 99 ? '99+' : meta.unratedCount}</span> : null}
+                </Link>
+                <Link
+                  href="/library"
+                  className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-sm border border-hairline bg-surface px-2 text-sm font-medium text-ink transition hover:bg-surface-muted"
+                >
+                  <LibraryBig className="h-4 w-4" /> Library
+                </Link>
+              </>
+            ) : null}
             <Link
               href="/settings"
               className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border border-hairline bg-surface text-ink transition hover:bg-surface-muted"
@@ -178,9 +218,9 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           </div>
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <SyncStatusLine meta={meta} />
+          <SyncStatusLine meta={meta} contentMode={contentMode} />
           <span className="font-meta text-[11px] tabular-nums text-mutedink">
-            {meta.resultCount} of {meta.totalCount} articles
+            {meta.resultCount} of {meta.totalCount} {contentMode === 'papers' ? 'papers' : 'articles'}
           </span>
           <div className="ml-auto inline-flex rounded-sm border border-hairline bg-surface p-0.5" aria-label="Sort articles">
             <button
@@ -203,30 +243,47 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
         </div>
 
         <div className="flex items-start gap-3 border-t border-hairline pt-2.5">
-          <span className="theorem-label w-14 shrink-0 pt-2.5 text-mutedink">Status</span>
+          <span className="theorem-label w-14 shrink-0 pt-2.5 text-mutedink">{contentMode === 'papers' ? 'Stage' : 'Status'}</span>
           <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant={allStatusesSelected ? 'default' : 'secondary'}
-              onClick={() => resetFilters({ ...filters, statuses: allStatusesSelected ? [] : allStatuses })}
-              aria-pressed={allStatusesSelected}
-              title={allStatusesSelected ? 'Deselect all rating statuses' : 'Select all rating statuses'}
-            >
-              All statuses
-            </Button>
-            {statuses.map((status) => (
+            {contentMode === 'papers' ? (
               <Button
-                key={status.value}
                 type="button"
                 size="sm"
-                variant={filters.statuses.includes(status.value) ? 'default' : 'secondary'}
-                onClick={() => toggleStatus(status.value)}
-                aria-pressed={filters.statuses.includes(status.value)}
+                variant={allPaperStatusesSelected ? 'default' : 'secondary'}
+                onClick={() => resetFilters({ ...filters, paperStatuses: allPaperStatusesSelected ? [] : allPaperStatuses })}
+                aria-pressed={allPaperStatusesSelected}
               >
-                {status.label}
+                All stages
               </Button>
-            ))}
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant={allStatusesSelected ? 'default' : 'secondary'}
+                onClick={() => resetFilters({ ...filters, statuses: allStatusesSelected ? [] : allStatuses })}
+                aria-pressed={allStatusesSelected}
+                title={allStatusesSelected ? 'Deselect all rating statuses' : 'Select all rating statuses'}
+              >
+                All statuses
+              </Button>
+            )}
+            {(contentMode === 'papers' ? paperStatuses : statuses).map((status) => {
+              const selected = contentMode === 'papers'
+                ? filters.paperStatuses.includes(status.value as PaperStatus)
+                : filters.statuses.includes(status.value as ReaderStatus);
+              return (
+                <Button
+                  key={status.value}
+                  type="button"
+                  size="sm"
+                  variant={selected ? 'default' : 'secondary'}
+                  onClick={() => contentMode === 'papers' ? togglePaperStatus(status.value as PaperStatus) : toggleStatus(status.value as ReaderStatus)}
+                  aria-pressed={selected}
+                >
+                  {status.label}
+                </Button>
+              );
+            })}
           </div>
         </div>
 
@@ -245,7 +302,7 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           >
             <Sparkles className="h-3.5 w-3.5" /> Today{meta.sessionNewCount > 0 ? ` · ${meta.sessionNewCount}` : ''}
           </Button>
-          {hasGalois ? (
+          {contentMode === 'articles' && hasGalois ? (
             <Button
               type="button"
               size="sm"
@@ -257,18 +314,6 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
               Galois
             </Button>
           ) : null}
-          {hasPapers ? (
-            <Button
-              type="button"
-              size="sm"
-              variant={papersVisibility === 'only' ? 'default' : 'secondary'}
-              onClick={() => setPreference('papersVisibility', papersVisibility === 'only' ? 'shown' : 'only')}
-              aria-pressed={papersVisibility === 'only'}
-              title="Only articles from the papers folder"
-            >
-              Papers
-            </Button>
-          ) : null}
           <Button type="button" size="sm" variant={filters.sources.length > 0 ? 'default' : 'secondary'} onClick={() => setSourcesOpen(true)}>
             Sources{filters.sources.length > 0 ? ` (${filters.sources.length})` : ''}
           </Button>
@@ -278,6 +323,22 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           <Button type="button" size="sm" variant={selectedFolders.length > 0 ? 'default' : 'secondary'} onClick={() => setFoldersOpen(true)}>
             Folders{selectedFolders.length > 0 ? ` (${selectedFolders.length})` : ''}
           </Button>
+          {contentMode === 'papers' && watchedAuthors.length > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={selectedAuthors.length > 0 ? 'default' : 'secondary'}
+              onClick={() => setAuthorsOpen(true)}
+              title="Filter by people from the watched-author workflow"
+            >
+              <UserRound className="h-3.5 w-3.5" /> Authors{selectedAuthors.length > 0 ? ` (${selectedAuthors.length})` : ''}
+            </Button>
+          ) : null}
+          {contentMode === 'papers' && watchedTopics.length > 0 ? (
+            <Button type="button" size="sm" variant={selectedTopics.length > 0 ? 'default' : 'secondary'} onClick={() => setTopicsOpen(true)}>
+              Topics{selectedTopics.length > 0 ? ` (${selectedTopics.length})` : ''}
+            </Button>
+          ) : null}
           {meta.duplicateCount > 0 ? (
             <Button
               type="button"
@@ -295,8 +356,8 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
               size="sm"
               variant="secondary"
               onClick={() => {
-                resetFilters({ ...defaultFilters, statuses: [...defaultFilters.statuses], sortMode: filters.sortMode });
-                setPreference('papersVisibility', 'shown');
+                const defaults = contentMode === 'papers' ? defaultPaperFilters : defaultArticleFilters;
+                resetFilters({ ...defaults, statuses: [...defaults.statuses], paperStatuses: [...defaults.paperStatuses], sortMode: filters.sortMode });
               }}
               title="Reset search and filters"
             >
@@ -385,6 +446,58 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
           ))}
         </FilterDialog>
       ) : null}
+      {authorsOpen ? (
+        <FilterDialog
+          title="Watched authors"
+          count={watchedAuthors.length}
+          visibleCount={filteredAuthors.length}
+          searchValue={authorQuery}
+          searchPlaceholder="Search people"
+          onSearchChange={setAuthorQuery}
+          onClose={() => setAuthorsOpen(false)}
+          selectedCount={selectedAuthors.length}
+          selectedVisibleCount={filteredAuthors.filter((author) => selectedAuthors.includes(author)).length}
+          allVisibleSelected={filteredAuthors.length > 0 && filteredAuthors.every((author) => selectedAuthors.includes(author))}
+          onSelectAll={() => resetFilters({ ...filters, watchedAuthors: mergeOptions(selectedAuthors, filteredAuthors) })}
+          onDeselectAll={() => resetFilters({ ...filters, watchedAuthors: removeOptions(selectedAuthors, filteredAuthors) })}
+        >
+          {watchedAuthors.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No watched authors in these papers</p> : null}
+          {watchedAuthors.length > 0 && filteredAuthors.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No matching people</p> : null}
+          {filteredAuthors.map((author) => (
+            <label key={author} className="flex min-h-11 items-center gap-3 rounded-sm px-3 text-sm hover:bg-surface-muted">
+              <input type="checkbox" className="h-4 w-4 shrink-0 accent-[var(--accent)]" checked={selectedAuthors.includes(author)} onChange={() => toggleWatchedAuthor(author)} />
+              <span className="min-w-0 flex-1 truncate">{author}</span>
+              <span className="font-meta text-[11px] tabular-nums text-mutedink">{authorCounts.get(author) ?? 0}</span>
+            </label>
+          ))}
+        </FilterDialog>
+      ) : null}
+      {topicsOpen ? (
+        <FilterDialog
+          title="Watched topics"
+          count={watchedTopics.length}
+          visibleCount={filteredTopics.length}
+          searchValue={topicQuery}
+          searchPlaceholder="Search watched topics"
+          onSearchChange={setTopicQuery}
+          onClose={() => setTopicsOpen(false)}
+          selectedCount={selectedTopics.length}
+          selectedVisibleCount={filteredTopics.filter((topic) => selectedTopics.includes(topic)).length}
+          allVisibleSelected={filteredTopics.length > 0 && filteredTopics.every((topic) => selectedTopics.includes(topic))}
+          onSelectAll={() => resetFilters({ ...filters, watchedTopics: mergeOptions(selectedTopics, filteredTopics) })}
+          onDeselectAll={() => resetFilters({ ...filters, watchedTopics: removeOptions(selectedTopics, filteredTopics) })}
+        >
+          {watchedTopics.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No watched topics in these papers</p> : null}
+          {watchedTopics.length > 0 && filteredTopics.length === 0 ? <p className="px-3 py-8 text-center text-sm text-mutedink">No matching topics</p> : null}
+          {filteredTopics.map((topic) => (
+            <label key={topic} className="flex min-h-11 items-center gap-3 rounded-sm px-3 text-sm hover:bg-surface-muted">
+              <input type="checkbox" className="h-4 w-4 shrink-0 accent-[var(--accent)]" checked={selectedTopics.includes(topic)} onChange={() => toggleWatchedTopic(topic)} />
+              <span className="min-w-0 flex-1 truncate">{topic}</span>
+              <span className="font-meta text-[11px] tabular-nums text-mutedink">{topicCounts.get(topic) ?? 0}</span>
+            </label>
+          ))}
+        </FilterDialog>
+      ) : null}
     </div>
   );
 }
@@ -419,10 +532,18 @@ function FilterDialog({
   children: React.ReactNode;
 }): React.ReactElement {
   return (
-    <div className="fixed inset-0 z-50 bg-black/30 px-3 py-20 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`${title} filter`}>
+    <div
+      className="fixed inset-0 z-50 flex items-end bg-black/30 pt-12 backdrop-blur-sm sm:block sm:px-3 sm:py-20"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${title} filter`}
+    >
       <button type="button" className="absolute inset-0 cursor-default" aria-label={`Close ${title} filter`} onClick={onClose} />
-      <div className="relative mx-auto flex max-h-[min(70vh,520px)] max-w-[560px] flex-col rounded-sm border border-hairline bg-surface text-ink shadow-2xl">
-        <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
+      <div
+        className="relative flex max-h-[calc(100dvh-3rem)] w-full min-w-0 flex-col rounded-t-sm border border-hairline bg-surface pb-[env(safe-area-inset-bottom)] text-ink shadow-2xl sm:mx-auto sm:max-h-[min(70vh,520px)] sm:max-w-[560px] sm:rounded-sm sm:pb-0"
+        data-filter-sheet
+      >
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-hairline px-4 py-3">
           <div>
             <h2 className="font-heading text-base font-bold">{title}</h2>
             <p className="font-meta text-[11px] text-mutedink">
@@ -433,21 +554,21 @@ function FilterDialog({
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <div className="border-b border-hairline p-2">
+        <div className="shrink-0 border-b border-hairline p-3 sm:p-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mutedink" />
             <Input className="h-9 pl-9" placeholder={searchPlaceholder} value={searchValue} onChange={(event) => onSearchChange(event.target.value)} />
           </div>
-          <div className="mt-2 flex gap-2">
-            <Button type="button" size="sm" variant={allVisibleSelected ? 'default' : 'secondary'} onClick={onSelectAll} disabled={visibleCount === 0}>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button type="button" size="sm" className="min-w-[8rem] flex-1 sm:flex-none" variant={allVisibleSelected ? 'default' : 'secondary'} onClick={onSelectAll} disabled={visibleCount === 0}>
               <CheckCheck className="h-3.5 w-3.5" /> {searchValue.trim() ? 'Select shown' : 'Select all'}
             </Button>
-            <Button type="button" size="sm" variant="secondary" onClick={onDeselectAll} disabled={selectedVisibleCount === 0}>
+            <Button type="button" size="sm" className="min-w-[8rem] flex-1 sm:flex-none" variant="secondary" onClick={onDeselectAll} disabled={selectedVisibleCount === 0}>
               <CircleOff className="h-3.5 w-3.5" /> {searchValue.trim() ? 'Deselect shown' : 'Deselect all'}
             </Button>
           </div>
         </div>
-        <div className="overflow-y-auto p-2">{children}</div>
+        <div className="min-h-0 overflow-y-auto overscroll-contain px-2 pb-16 pt-2 sm:p-2">{children}</div>
       </div>
     </div>
   );
@@ -480,22 +601,54 @@ function countOptions(articles: ArticleSummary[], getOptions: (article: ArticleS
   return counts;
 }
 
-function isFiltering(filters: ArticleFilters, papersVisibility: string): boolean {
+function isFiltering(filters: ArticleFilters, mode: ContentMode): boolean {
   return (
     filters.query.trim().length > 0 ||
-    filters.statuses.length !== 1 ||
-    filters.statuses[0] !== 'unrated' ||
+    (mode === 'papers'
+      ? filters.paperStatuses.length !== defaultPaperFilters.paperStatuses.length ||
+        filters.paperStatuses.some((status, index) => status !== defaultPaperFilters.paperStatuses[index])
+      : filters.statuses.length !== 1 || filters.statuses[0] !== 'unrated') ||
     filters.sources.length > 0 ||
     (filters.tags ?? []).length > 0 ||
     (filters.folders ?? []).length > 0 ||
+    (filters.watchedAuthors ?? []).length > 0 ||
+    (filters.watchedTopics ?? []).length > 0 ||
     filters.galoisOnly ||
     filters.newTodayOnly ||
-    filters.showDuplicates ||
-    papersVisibility !== 'shown'
+    filters.showDuplicates
   );
 }
 
-function SyncStatusLine({ meta }: { meta: FilterBarMeta }): React.ReactElement | null {
+function ModeButton({
+  mode,
+  current,
+  onClick,
+  icon,
+  children
+}: {
+  mode: ContentMode;
+  current: ContentMode;
+  onClick: (mode: ContentMode) => void;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}): React.ReactElement {
+  const active = mode === current;
+  return (
+    <button
+      type="button"
+      className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-[2px] px-3 text-xs font-medium transition-colors ${
+        active ? 'bg-ink text-paper' : 'text-mutedink hover:bg-surface-muted hover:text-ink'
+      }`}
+      onClick={() => onClick(mode)}
+      aria-pressed={active}
+    >
+      {icon}
+      {children}
+    </button>
+  );
+}
+
+function SyncStatusLine({ meta, contentMode }: { meta: FilterBarMeta; contentMode: ContentMode }): React.ReactElement | null {
   const items: string[] = [];
 
   if (meta.offline) items.push('offline');
@@ -505,7 +658,7 @@ function SyncStatusLine({ meta }: { meta: FilterBarMeta }): React.ReactElement |
     items.push(`synced ${formatRelative(meta.lastSyncAt)}`);
   }
   if (meta.pendingCount > 0) items.push(`${meta.pendingCount} pending`);
-  if (meta.unratedCount > 0) items.push(`${meta.unratedCount} unrated`);
+  if (meta.unratedCount > 0) items.push(`${meta.unratedCount} ${contentMode === 'papers' ? 'inbox' : 'unrated'}`);
 
   if (items.length === 0) return null;
 

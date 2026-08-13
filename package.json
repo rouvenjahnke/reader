@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "workflows:build": "node scripts/build-n8n-workflows.mjs",
     "debug:tao": "node scripts/debug-terence-tao.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

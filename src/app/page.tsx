@@ -9,19 +9,21 @@ import { FixedSizeList, type ListChildComponentProps } from 'react-window';
 import { ArticleListItem } from '@/components/ArticleListItem';
 import { FilterBar, type FilterBarMeta } from '@/components/FilterBar';
 import { flushPendingQueues, getAllCachedBodies, pendingQueueDepth } from '@/lib/cache';
-import { applyPapersVisibility, dedupeArticles, filterAndSortArticles } from '@/lib/filters';
+import { applyContentMode, dedupeArticles, filterAndSortArticles } from '@/lib/filters';
 import { prefetchArticleBodies, type PrefetchProgress } from '@/lib/prefetch';
 import { fetchArticleSummaries, loadCachedSummaries } from '@/lib/sync';
 import { useArticleStore } from '@/stores/useArticleStore';
 import { usePreferencesStore } from '@/stores/usePreferencesStore';
 import type { ArticleSummary } from '@/types/article';
 
-const LIST_ITEM_SIZE = 122;
+const ARTICLE_ITEM_SIZE = 122;
+const PAPER_ITEM_SIZE = 142;
 
 export default function HomePage(): React.ReactElement {
   const router = useRouter();
   const articles = useArticleStore((state) => state.articles);
   const filters = useArticleStore((state) => state.filters);
+  const contentMode = useArticleStore((state) => state.contentMode);
   const hydrated = useArticleStore((state) => state.hydrated);
   const sessionNewIds = useArticleStore((state) => state.sessionNewIds);
   const setArticles = useArticleStore((state) => state.setArticles);
@@ -29,7 +31,6 @@ export default function HomePage(): React.ReactElement {
   const noteSessionNew = useArticleStore((state) => state.noteSessionNew);
   const lastArticleId = useArticleStore((state) => state.lastArticleId);
   const pinPriorityOnTop = usePreferencesStore((state) => state.pinPriorityOnTop);
-  const papersVisibility = usePreferencesStore((state) => state.papersVisibility);
   const autoSyncOnOpen = usePreferencesStore((state) => state.autoSyncOnOpen);
   const bodyPrefetch = usePreferencesStore((state) => state.bodyPrefetch);
   const syncIntervalMinutes = usePreferencesStore((state) => state.syncIntervalMinutes);
@@ -47,13 +48,13 @@ export default function HomePage(): React.ReactElement {
 
   const sessionNewSet = useMemo(() => new Set(sessionNewIds), [sessionNewIds]);
 
-  const visibleArticles = useMemo(() => applyPapersVisibility(articles, papersVisibility), [articles, papersVisibility]);
+  const visibleArticles = useMemo(() => applyContentMode(articles, contentMode), [articles, contentMode]);
 
   const scopedFilters = useMemo(() => ({ ...filters, query: '' }), [filters]);
 
   const scopedArticles = useMemo(
-    () => filterAndSortArticles(visibleArticles, scopedFilters, { pinPriorityOnTop }),
-    [visibleArticles, scopedFilters, pinPriorityOnTop]
+    () => filterAndSortArticles(visibleArticles, scopedFilters, { pinPriorityOnTop, contentMode }),
+    [visibleArticles, scopedFilters, pinPriorityOnTop, contentMode]
   );
 
   const dedup = useMemo(
@@ -62,8 +63,8 @@ export default function HomePage(): React.ReactElement {
   );
 
   const filteredSummaries = useMemo(
-    () => filterAndSortArticles(dedup.visible, filters, { pinPriorityOnTop }),
-    [dedup.visible, filters, pinPriorityOnTop]
+    () => filterAndSortArticles(dedup.visible, filters, { pinPriorityOnTop, contentMode }),
+    [dedup.visible, filters, pinPriorityOnTop, contentMode]
   );
 
   // If the query matches body content but no frontmatter hit, inject those entries.
@@ -79,13 +80,15 @@ export default function HomePage(): React.ReactElement {
   const lastArticle = useMemo(() => articles.find((article) => article.id === lastArticleId), [articles, lastArticleId]);
 
   const unratedCount = useMemo(
-    () => visibleArticles.filter((article) => (article.frontmatter.reader_status ?? 'unrated') === 'unrated').length,
-    [visibleArticles]
+    () => visibleArticles.filter((article) => contentMode === 'papers'
+      ? (article.frontmatter.paper_status ?? 'inbox') === 'inbox'
+      : (article.frontmatter.reader_status ?? 'unrated') === 'unrated').length,
+    [visibleArticles, contentMode]
   );
 
   const refreshPending = async () => {
-    const depth = await pendingQueueDepth().catch(() => ({ ratings: 0, highlights: 0, notes: 0 }));
-    setPendingCount(depth.ratings + depth.highlights + depth.notes);
+    const depth = await pendingQueueDepth().catch(() => ({ ratings: 0, highlights: 0, notes: 0, pins: 0, paperStatuses: 0 }));
+    setPendingCount(depth.ratings + depth.highlights + depth.notes + depth.pins + depth.paperStatuses);
   };
 
   const startPrefetch = (summaries: ArticleSummary[]) => {
@@ -169,8 +172,8 @@ export default function HomePage(): React.ReactElement {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.target instanceof HTMLElement && (event.target.isContentEditable || ['INPUT', 'TEXTAREA'].includes(event.target.tagName))) return;
-      if (event.key === 't') router.push('/triage');
-      if (event.key === 'b') router.push('/library');
+      if (contentMode === 'articles' && event.key === 't') router.push('/triage');
+      if (contentMode === 'articles' && event.key === 'b') router.push('/library');
       if (event.key === '/') {
         event.preventDefault();
         document.querySelector<HTMLInputElement>('[data-search-input]')?.focus();
@@ -178,7 +181,7 @@ export default function HomePage(): React.ReactElement {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [router]);
+  }, [contentMode, router]);
 
   // Body content search runs against the local cache when the query is non-empty.
   useEffect(() => {
@@ -232,7 +235,7 @@ export default function HomePage(): React.ReactElement {
       <FilterBar articles={visibleArticles} onRefresh={() => void refresh(false)} meta={meta} />
       <section className="mx-auto max-w-[880px] py-3">
         {!hydrated ? <p className="px-4 pb-2 font-meta text-xs text-mutedink">Loading…</p> : null}
-        {showContinueReading && lastArticle ? (
+        {showContinueReading && lastArticle && (lastArticle.collection === 'papers') === (contentMode === 'papers') ? (
           <div className="px-4 pb-2">
             <Link
               href={`/article/${lastArticle.id}`}
@@ -247,7 +250,9 @@ export default function HomePage(): React.ReactElement {
           </div>
         ) : null}
         {hydrated && filtered.length === 0 ? (
-          <div className="px-4 py-24 text-center text-mutedink">No articles match the current filters.</div>
+          <div className="px-4 py-24 text-center text-mutedink">
+            No {contentMode === 'papers' ? 'papers' : 'articles'} match the current filters.
+          </div>
         ) : null}
         <div ref={listHostRef}>
           {filtered.length > 0 ? (
@@ -255,7 +260,7 @@ export default function HomePage(): React.ReactElement {
               height={height}
               width="100%"
               itemCount={filtered.length}
-              itemSize={LIST_ITEM_SIZE}
+              itemSize={contentMode === 'papers' ? PAPER_ITEM_SIZE : ARTICLE_ITEM_SIZE}
               itemData={{ articles: filtered, sessionNewIds: sessionNewSet }}
             >
               {Row}

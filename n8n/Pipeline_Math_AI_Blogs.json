@@ -1,0 +1,741 @@
+{
+  "name": "Pipeline_Math_AI_Blogs",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "c3240d03-aeb7-40a5-93e8-3010815a6f79",
+      "name": "Schedule hourly1",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        1280,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://miniflux.rouvenjahnke.com/v1/entries",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "unread"
+            },
+            {
+              "name": "limit",
+              "value": "1000"
+            },
+            {
+              "name": "direction",
+              "value": "desc"
+            }
+          ]
+        },
+        "sendHeaders": false,
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "135d9723-3353-460a-87ec-64e0f4e448aa",
+      "name": "Miniflux GET unread1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1488,
+        528
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "IbLEWvJvo7JmZWgS",
+          "name": "Miniflux"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "entries",
+        "options": {}
+      },
+      "id": "b5b914b7-a6bb-4ef4-8e8e-847860d11218",
+      "name": "Split entries1",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id AS source_id, name AS source_name, category, priority, author_default, fetch_full_content\nFROM blog_sources\nWHERE active = TRUE\n  AND (\n    miniflux_feed_id = $1::int\n    OR (\n      $1::int = 65\n      AND (\n        LOWER(name) LIKE '%terry tao%'\n        OR LOWER(name) LIKE '%terence tao%'\n        OR LOWER(name) LIKE '%what''s new%'\n      )\n    )\n  )\nORDER BY CASE WHEN miniflux_feed_id = $1::int THEN 0 ELSE 1 END\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ $json.feed_id }}"
+        }
+      },
+      "id": "7c59195f-dced-47b2-970a-60af2f326965",
+      "name": "Lookup blog source1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1888,
+        528
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "XrC8CKSzlM25JCKY",
+          "name": "math-corpus-pg"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.source_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              },
+              "id": "3145ce8e-43ae-437f-b37b-13a38aee1f89"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "25a8a815-dda6-4a42-a302-f7bc80af6b7a",
+      "name": "Skip if not registered1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2080,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const entry = $('Split entries1').item.json;\nconst src = $input.item.json;\n\nreturn {\n  json: {\n    miniflux_entry_id: entry.id,\n    feed_id: entry.feed_id,\n    url: entry.url,\n    title: entry.title || '(no title)',\n    author: entry.author || src.author_default || '',\n    published_at: entry.published_at || null,\n    rss_content_html: entry.content || entry.summary || '',\n    source_id: src.source_id,\n    source_name: src.source_name,\n    category: src.category,\n    source_priority: src.priority,\n    fetch_full_content: src.fetch_full_content\n  }\n};"
+      },
+      "id": "b617eeec-b961-403a-9272-23ff093d2863",
+      "name": "Prepare entry1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2288,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=python3 /opt/pipeline-mvp/scripts/fetch_full_content.py '{\"url\": \"{{ $json.category === \"math-soc\" ? ($json.rss_content_html || \"\").replace(/<[^>]+>/g, \" \").match(/https?:\\/\\/(?!mathstodon\\.xyz)[^\\s\"<>]+/)?.[0] || \"\" : ($json.fetch_full_content ? $json.url : \"\") }}\"}'"
+      },
+      "id": "5b3d2af3-3266-45ee-a17d-1f0c5aa6cb53",
+      "name": "trafilatura full-text1",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2480,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const stdout = $input.item.json.stdout || '{}';\nconst prep = $('Prepare entry1').item.json;\n\nlet extr;\ntry { extr = JSON.parse(stdout.trim()); } catch(e) { extr = { success: false }; }\n\nconst stripHtml = (html) => (html || '')\n  .replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n  .replace(/<style[\\s\\S]*?<\\/style>/gi, '')\n  .replace(/<a[^>]+href=\"([^\"]*)\"[^>]*>([^<]*)<\\/a>/gi, '[$2]($1)')\n  .replace(/<\\/?([a-z][a-z0-9]*)\\b[^>]*>/gi, ' ')\n  .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n  .replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\")\n  .replace(/\\s+/g, ' ').trim();\n\nconst rssStripped = stripHtml(prep.rss_content_html || '');\n\nlet markdown, contentSource;\n\nif (extr.success && extr.markdown && extr.markdown.length > 100) {\n  markdown = extr.markdown;\n  contentSource = 'trafilatura';\n} else if (rssStripped.length > 100) {\n  markdown = rssStripped;\n  contentSource = 'rss';\n} else {\n  markdown = rssStripped || '';\n  contentSource = 'none';\n}\n\nreturn {\n  json: {\n    ...prep,\n    full_content_markdown: markdown,\n    full_content_source: contentSource,\n    full_content_char_count: markdown.length,\n    content_truncated: false,\n    resolved_title: prep.title\n  }\n};"
+      },
+      "id": "83983841-9eaa-4423-9586-ce39c0cf3193",
+      "name": "Parse content (or fallback)1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2688,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://192.168.66.112:4000/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": \"openai/gpt-4o\",\n  \"response_format\": { \"type\": \"json_object\" },\n  \"temperature\": 0.2,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Du bewertest Blogartikel fuer einen Mathematikstudenten mit Schwerpunkt algebraische Geometrie, arithmetische Geometrie und ML/AI-Forschung.\\n\\nAntworte ausschliesslich mit validem JSON ohne Markdown-Bloecke und mit exakt diesen Schluesseln:\\nsummary_de (String, 2-3 Saetze auf Deutsch), profile_fit (String, 1 Satz), tags (Array von Strings), matched_topics (Array von Strings), score (Zahl von 1.0 bis 10.0 in Schritten von 0.5), language (ISO-639-1-Code des Artikels).\\n\\nWICHTIG: Leite den Score ausschliesslich aus dem tatsaechlichen Inhalt ab. Uebernimm niemals einen Beispiel- oder Standardwert.\\n10   = Pflichtlektuere: neues Resultat oder neue Methode in algebraischer/arithmetischer Geometrie oder grundlegende ML-Forschung\\n7-9  = sehr relevant: fachlich einschlaegig, substanzieller technischer Inhalt\\n5-6  = interessant: angrenzendes Gebiet oder guter Ueberblick ohne Neuigkeitswert\\n3-4  = wenig relevant: Randthema, Produktankuendigung, Nachrichtenmeldung, Release Notes\\n1-2  = irrelevant: kein fachlicher Bezug zu Mathematik, ML oder AI\\nEin Artikel ohne Bezug zu Mathematik, ML oder AI erhaelt hoechstens 3, unabhaengig von seiner Qualitaet.\\nReine IT-News, Hardware-Tests, Betriebssystem- oder Tooling-Meldungen erhalten hoechstens 3.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": ($json.full_content_markdown && $json.full_content_markdown.length > 50) ? $json.full_content_markdown.slice(0, 3000) : ($json.rss_content_html ? $json.rss_content_html.replace(/<[^>]+>/g, ' ').slice(0, 3000) : 'Titel: ' + $json.resolved_title)\n    }\n  ]\n} }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "25b5622d-1829-4706-9f56-b45f807f1a4d",
+      "name": "LLM enrich + score1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2880,
+        528
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "6LePySC9RG7hDQ1q",
+          "name": "litellm reading_klist"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node: one public score, with a deliberately small source component.\nconst clamp = (value, min, max) => Math.min(max, Math.max(min, value));\nconst round1 = (value) => Math.round(value * 10) / 10;\n\nconst CONTENT_WEIGHT = 0.85;\nconst SOURCE_WEIGHT = 0.15;\nconst ACCEPTANCE_SCORE = 6.0;\n\nreturn $input.all().map((item, index) => {\n  const prepared = $('Parse content (or fallback)1').itemMatching(index).json;\n  let llm;\n\n  try {\n    const raw = item.json.choices?.[0]?.message?.content || '{}';\n    llm = JSON.parse(raw.replace(/```json|```/g, '').trim());\n  } catch {\n    llm = {\n      summary_de: '(parse error)',\n      profile_fit: '',\n      tags: [],\n      matched_topics: [],\n      score: 0,\n      language: 'unknown',\n    };\n  }\n\n  const contentScore = clamp(Number(llm.score) || 0, 0, 10);\n  const parsedSourcePriority = Number(prepared.source_priority);\n  const sourcePriority = clamp(Number.isFinite(parsedSourcePriority) ? parsedSourcePriority : 5, 0, 10);\n  const score = round1(\n    CONTENT_WEIGHT * contentScore + SOURCE_WEIGHT * sourcePriority,\n  );\n  const isTaoSource =\n    [45, 65].includes(Number(prepared.feed_id)) ||\n    /(?:terry|terence) tao|what's new/i.test(prepared.source_name || '');\n\n  return {\n    json: {\n      ...prepared,\n      summary_de: llm.summary_de || '',\n      profile_fit: llm.profile_fit || '',\n      tags: Array.isArray(llm.tags) ? llm.tags : [],\n      matched_topics: Array.isArray(llm.matched_topics) ? llm.matched_topics : [],\n      content_score: contentScore,\n      source_priority: sourcePriority,\n      score,\n      scoring_version: 'content-85_source-15_v1',\n      language: llm.language || 'unknown',\n      // Tao is a completeness exception. It does not imply a pin.\n      accept: isTaoSource || score >= ACCEPTANCE_SCORE,\n    },\n  };\n});\n"
+      },
+      "id": "cf71c19f-8149-46fe-9f1a-2d92e5cddb62",
+      "name": "Combined score + filter1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3088,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.accept }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "id": "3514bb2a-dd69-4e1c-b2fb-f7b56cdedb2b"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "64bc64e0-a9e4-4ad2-ad8c-9b5ae316785c",
+      "name": "Skip if not accepted1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3280,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://192.168.66.112:4000/embeddings",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": \"voyage-4-large\",\n  \"input\": $json.full_content_markdown ? $json.full_content_markdown.slice(0, 8000) : $json.resolved_title\n} }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "bb5b195f-8133-49f0-9d78-8971127c77d9",
+      "name": "Embed voyage-3-large1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3488,
+        528
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "6LePySC9RG7hDQ1q",
+          "name": "litellm reading_klist"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node: render the normalized Reader article format.\nconst deterministicUUID = (entryId) => {\n  const id = String(entryId || '0');\n  let h1 = 0x9e3779b9;\n  let h2 = 0x243f6a88;\n  for (let i = 0; i < id.length; i += 1) {\n    h1 = Math.imul(h1 ^ id.charCodeAt(i), 0x9e3779b9);\n    h2 = Math.imul(h2 ^ id.charCodeAt(i), 0x6c62272e);\n  }\n  h1 = (h1 ^ (h1 >>> 16)) >>> 0;\n  h2 = (h2 ^ (h2 >>> 16)) >>> 0;\n  const h3 = Math.imul(h1, 0x85ebca6b) >>> 0;\n  const h4 = Math.imul(h2, 0xc2b2ae35) >>> 0;\n  const toHex = (number, length) => number.toString(16).padStart(length, '0');\n  return `${toHex(h1, 8)}-${toHex(h2 & 0xffff, 4)}-4${toHex(h3 & 0xfff, 3)}-${toHex((h4 & 0x3fff) | 0x8000, 4)}-${toHex(h1, 8)}${toHex(h2 & 0xffff, 4)}`;\n};\n\nconst slugify = (value) =>\n  String(value || '')\n    .toLowerCase()\n    .replace(/\\u00e4/g, 'ae')\n    .replace(/\\u00f6/g, 'oe')\n    .replace(/\\u00fc/g, 'ue')\n    .replace(/\\u00df/g, 'ss')\n    .replace(/[^a-z0-9]+/g, '-')\n    .replace(/^-+|-+$/g, '')\n    .substring(0, 60);\n\nconst yamlString = (value) => JSON.stringify(String(value || ''));\n\nreturn $input.all().map((item, index) => {\n  const article = $('Combined score + filter1').itemMatching(index).json;\n  const vector = item.json.data?.[0]?.embedding || [];\n  const pointId = deterministicUUID(article.miniflux_entry_id);\n  const date = (article.published_at || new Date().toISOString()).split('T')[0];\n  const filename = `${date}-${slugify(article.source_name)}-${article.miniflux_entry_id}-${slugify(article.resolved_title).substring(0, 30)}.md`;\n  const subfolder = ['ai', 'ml'].includes(article.category) ? 'ai_blogs' : 'math_blogs';\n  const relativePath = `${subfolder}/${filename}`;\n  const tags = Array.isArray(article.tags) && article.tags.length > 0\n    ? article.tags\n    : ['blog'];\n  const tagsYaml = tags.map((tag) => `  - ${yamlString(tag)}`).join('\\n');\n  const matchedTopics = JSON.stringify(article.matched_topics || []);\n\n  const frontmatter = `---\\n` +\n    `title: ${yamlString(article.resolved_title)}\\n` +\n    `url: ${yamlString(article.url)}\\n` +\n    `author: ${yamlString(article.author || 'unknown')}\\n` +\n    `source: ${yamlString(article.source_name)}\\n` +\n    `fetched: ${new Date().toISOString()}\\n` +\n    `published: ${article.published_at || ''}\\n` +\n    `type: blog\\n` +\n    `score: ${article.score.toFixed(1)}\\n` +\n    `content_score: ${article.content_score.toFixed(1)}\\n` +\n    `source_priority: ${article.source_priority.toFixed(1)}\\n` +\n    `scoring_version: ${article.scoring_version}\\n` +\n    `language: ${article.language}\\n` +\n    `reader_status: unrated\\n` +\n    `tags:\\n${tagsYaml}\\n` +\n    `# === pipeline-internal ===\\n` +\n    `category: ${article.category}\\n` +\n    `matched_topics: ${matchedTopics}\\n` +\n    `full_content_source: ${article.full_content_source}\\n` +\n    `content_truncated: ${Boolean(article.content_truncated)}\\n` +\n    `qdrant_point_id: ${pointId}\\n` +\n    `qdrant_collection: math_corpus\\n` +\n    `embedding_model: voyage-4-large\\n` +\n    `---\\n`;\n\n  const tagLine = tags.map((tag) => `#${tag}`).join(' ');\n  const body = `\\n# ${article.resolved_title}\\n\\n` +\n    `**${article.author || 'unknown'}** - *${article.source_name}* - ${date}\\n\\n` +\n    `${tagLine}\\n\\n` +\n    `> [!info] Quelle\\n` +\n    `> [Original lesen](${article.url})\\n` +\n    `> Reader-Score: **${article.score.toFixed(1)}** ` +\n    `(Inhalt ${article.content_score.toFixed(1)}, Quelle ${article.source_priority.toFixed(1)})\\n\\n` +\n    `## Zusammenfassung\\n\\n${article.summary_de}\\n\\n` +\n    `## Profil-Relevanz\\n\\n${article.profile_fit}\\n\\n` +\n    (article.matched_topics?.length\n      ? `## Themen\\n\\n${article.matched_topics.map((topic) => `- \\`${topic}\\``).join('\\n')}\\n\\n`\n      : '') +\n    `---\\n\\n## Volltext\\n\\n${article.full_content_markdown || ''}\\n`;\n\n  return {\n    json: {\n      ...article,\n      vector,\n      qdrant_point_id: pointId,\n      file_path: relativePath,\n      relative_path: relativePath,\n      content: frontmatter + body,\n    },\n  };\n});\n"
+      },
+      "id": "0d0d4e85-9d61-45e9-a11e-5a52bbf9d71d",
+      "name": "Render MD (App format)1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3680,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=http://192.168.66.111:6333/collections/math_corpus/points",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "qdrantApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"points\": [{\n    \"id\": $json.qdrant_point_id,\n    \"vector\": $json.vector,\n    \"payload\": {\n      \"title\": $json.resolved_title,\n      \"url\": $json.url,\n      \"source\": $json.source_name,\n      \"category\": $json.category,\n      \"score\": $json.score,\n      \"content_score\": $json.content_score,\n      \"source_priority\": $json.source_priority,\n      \"scoring_version\": $json.scoring_version,\n      \"published_at\": $json.published_at || \"\",\n      \"language\": $json.language,\n      \"tags\": $json.tags || [],\n      \"summary_de\": $json.summary_de\n    }\n  }]\n} }}",
+        "options": {}
+      },
+      "id": "b4f31e9f-3cfe-4070-a122-509c09d32712",
+      "name": "Qdrant upsert1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3888,
+        528
+      ],
+      "credentials": {
+        "qdrantApi": {
+          "id": "lvgCbtF4aDcYC9BJ",
+          "name": "Qdrant pct 111"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO math_articles (\n  miniflux_entry_id, source_id, url, title, author, published_at,\n  summary, content_markdown, content_truncated, tags, language,\n  type, score, content_score, source_priority, scoring_version, profile_fit, reader_status,\n  nextcloud_path, qdrant_point_id, qdrant_collection, embedding_model, status\n) VALUES (\n  $1::bigint, $2::int, $3, $4, $5, $6::timestamptz,\n  $7, $8, $9::boolean, $10::text[], $11,\n  'blog', $12::float, $13::float, $14::float, $15, $16, 'unrated',\n  $17, $18::uuid, 'math_corpus', 'voyage-4-large', 'inbox'\n) ON CONFLICT (url) DO NOTHING;",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Render MD (App format)1').item.json.miniflux_entry_id,\n  $('Render MD (App format)1').item.json.source_id,\n  $('Render MD (App format)1').item.json.url,\n  $('Render MD (App format)1').item.json.resolved_title,\n  $('Render MD (App format)1').item.json.author,\n  $('Render MD (App format)1').item.json.published_at || null,\n  $('Render MD (App format)1').item.json.summary_de,\n  $('Render MD (App format)1').item.json.full_content_markdown,\n  $('Render MD (App format)1').item.json.content_truncated,\n  $('Render MD (App format)1').item.json.tags || [],\n  $('Render MD (App format)1').item.json.language,\n  $('Render MD (App format)1').item.json.score,\n  $('Render MD (App format)1').item.json.content_score,\n  $('Render MD (App format)1').item.json.source_priority,\n  $('Render MD (App format)1').item.json.scoring_version,\n  $('Render MD (App format)1').item.json.profile_fit,\n  $('Render MD (App format)1').item.json.relative_path,\n  $('Render MD (App format)1').item.json.qdrant_point_id\n] }}"
+        }
+      },
+      "id": "0ad545bd-ff58-42d4-a4cf-2807f9f2112b",
+      "name": "Postgres INSERT1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        4496,
+        528
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "XrC8CKSzlM25JCKY",
+          "name": "math-corpus-pg"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://miniflux.rouvenjahnke.com/v1/entries",
+        "sendHeaders": false,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"entry_ids\": [{{ $('Prepare entry1').item.json.miniflux_entry_id }}],\n  \"status\": \"read\"\n}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "7a756494-0583-4752-8c9a-360c5f1677f6",
+      "name": "Miniflux mark read1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4688,
+        528
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "IbLEWvJvo7JmZWgS",
+          "name": "Miniflux"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "/bin/sh -c 'docker exec -u www-data nextcloud-aio-nextcloud php occ files:scan --shallow rouvenjahnke/files/Reader-Pipeline 2>&1 || echo \"occ scan skipped\"'"
+      },
+      "id": "da85e8d5-c0ef-4b37-8156-369d265731d3",
+      "name": "Nextcloud occ scan1",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        4896,
+        528
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH stats AS (\n  SELECT COUNT(*) AS total,\n         COUNT(*) FILTER (WHERE bs.category = 'math') AS math_count,\n         COUNT(*) FILTER (WHERE bs.category IN ('ai','ml')) AS ai_count\n  FROM math_articles ma\n  JOIN blog_sources bs ON ma.source_id = bs.id\n  WHERE ma.fetched_at >= NOW() - INTERVAL '1 hour'\n)\nUPDATE pipeline_state\nSET last_query_at = NOW(),\n    last_success_at = NOW(),\n    items_accepted_total = items_accepted_total + (SELECT total FROM stats)\nWHERE source = 'blogs'\nRETURNING (SELECT total FROM stats) AS total_today,\n          (SELECT math_count FROM stats) AS math_today,\n          (SELECT ai_count FROM stats) AS ai_today;",
+        "options": {}
+      },
+      "id": "9c48b7bc-65ce-4bb5-b386-9e22f3056c2d",
+      "name": "Update state1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        5088,
+        528
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "XrC8CKSzlM25JCKY",
+          "name": "math-corpus-pg"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"chat_id\": $env.TELEGRAM_CHAT_ID,\n  \"text\": \"Blog pipeline done\\n\\nTotal: \" + $json.total_today + \"\\nMath: \" + $json.math_today + \"\\nAI/ML: \" + $json.ai_today\n} }}",
+        "options": {}
+      },
+      "id": "8e32da6b-9b33-432a-86e0-ba6bf394ba03",
+      "name": "Telegram notify1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5296,
+        528
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=http://192.168.66.45:11005/remote.php/dav/files/rouvenjahnke/Workstation/Projects/maths/00_inbox/reader-pipeline/{{ $('Render MD (App format)1').item.json.relative_path }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/markdown",
+        "body": "={{ $('Render MD (App format)1').item.json.content }}",
+        "options": {
+          "allowUnauthorizedCerts": false
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        4080,
+        528
+      ],
+      "id": "ca8084ff-2326-4f97-b8a7-c59912a256d8",
+      "name": "Nextcloud Write FIle",
+      "credentials": {
+        "nextCloudApi": {
+          "id": "JfmGt4auomoaC4C5",
+          "name": "NextCloud rouvenjahnke"
+        },
+        "httpBasicAuth": {
+          "id": "iGjjYtpOYpvf7KhX",
+          "name": "nextcloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://miniflux.rouvenjahnke.com/v1/entries",
+        "sendHeaders": false,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"entry_ids\": [{{ $json.miniflux_entry_id }}],\n  \"status\": \"read\"\n}",
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "a3f91a98-d9e6-4982-9e77-a39be81afdbf",
+      "name": "Miniflux mark read (rejected)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3504,
+        752
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "IbLEWvJvo7JmZWgS",
+          "name": "Miniflux"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule hourly1": {
+      "main": [
+        [
+          {
+            "node": "Miniflux GET unread1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Miniflux GET unread1": {
+      "main": [
+        [
+          {
+            "node": "Split entries1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split entries1": {
+      "main": [
+        [
+          {
+            "node": "Lookup blog source1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup blog source1": {
+      "main": [
+        [
+          {
+            "node": "Skip if not registered1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip if not registered1": {
+      "main": [
+        [
+          {
+            "node": "Prepare entry1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare entry1": {
+      "main": [
+        [
+          {
+            "node": "trafilatura full-text1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "trafilatura full-text1": {
+      "main": [
+        [
+          {
+            "node": "Parse content (or fallback)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse content (or fallback)1": {
+      "main": [
+        [
+          {
+            "node": "LLM enrich + score1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM enrich + score1": {
+      "main": [
+        [
+          {
+            "node": "Combined score + filter1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip if not accepted1": {
+      "main": [
+        [
+          {
+            "node": "Embed voyage-3-large1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Miniflux mark read (rejected)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed voyage-3-large1": {
+      "main": [
+        [
+          {
+            "node": "Render MD (App format)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render MD (App format)1": {
+      "main": [
+        [
+          {
+            "node": "Qdrant upsert1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant upsert1": {
+      "main": [
+        [
+          {
+            "node": "Nextcloud Write FIle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres INSERT1": {
+      "main": [
+        [
+          {
+            "node": "Miniflux mark read1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Miniflux mark read1": {
+      "main": [
+        [
+          {
+            "node": "Nextcloud occ scan1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nextcloud occ scan1": {
+      "main": [
+        [
+          {
+            "node": "Update state1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update state1": {
+      "main": [
+        [
+          {
+            "node": "Telegram notify1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nextcloud Write FIle": {
+      "main": [
+        [
+          {
+            "node": "Postgres INSERT1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combined score + filter1": {
+      "main": [
+        [
+          {
+            "node": "Skip if not accepted1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timezone": "Europe/Berlin"
+  },
+  "pinData": {},
+  "tags": []
+}

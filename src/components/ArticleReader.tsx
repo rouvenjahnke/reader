@@ -11,6 +11,8 @@ import {
   Keyboard,
   ListTree,
   NotebookPen,
+  Pin,
+  PinOff,
   Quote,
   X
 } from 'lucide-react';
@@ -22,15 +24,28 @@ import { RatingActionBar } from '@/components/RatingActionBar';
 import { SwipeContainer } from '@/components/SwipeContainer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { flushPendingQueues, queueHighlight, queueNote, queueRating, saveArticle, updateCachedBody, updateCachedNote, updateCachedRating } from '@/lib/cache';
+import {
+  flushPendingQueues,
+  queueHighlight,
+  queueNote,
+  queuePaperStatus,
+  queuePin,
+  queueRating,
+  saveArticle,
+  updateCachedBody,
+  updateCachedNote,
+  updateCachedPaperStatus,
+  updateCachedPin,
+  updateCachedRating
+} from '@/lib/cache';
 import { arxivAbsUrl, arxivPdfUrl, buildBibtex, buildPlainCitation, normalizeArxivId } from '@/lib/citation';
-import { applyPapersVisibility, estimateReadingMinutes, filterAndSortArticles, nextUnratedAfter, priorityValue } from '@/lib/filters';
+import { applyContentMode, estimateReadingMinutes, filterAndSortArticles, nextUnratedAfter, priorityValue } from '@/lib/filters';
 import { highlightFirstOccurrence, removeHighlightInBody } from '@/lib/frontmatter';
 import { buildObsidianUri, slugifyHeading } from '@/lib/obsidian';
 import { appendSyncLog } from '@/lib/syncLog';
 import { useArticleStore } from '@/stores/useArticleStore';
 import { usePreferencesStore } from '@/stores/usePreferencesStore';
-import type { Article, ReaderStatus } from '@/types/article';
+import type { Article, PaperStatus, ReaderStatus } from '@/types/article';
 
 interface Props {
   article: Article;
@@ -54,12 +69,17 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const noteRef = useRef<HTMLTextAreaElement | null>(null);
   const selectionRef = useRef<{ text: string; occurrenceIndex: number; overlapsHighlight: boolean } | null>(null);
   const articles = useArticleStore((state) => state.articles);
-  const filters = useArticleStore((state) => state.filters);
+  const isPaper = article.collection === 'papers';
+  const contentMode = isPaper ? 'papers' : 'articles';
+  const filters = useArticleStore((state) => {
+    if (contentMode === state.contentMode) return state.filters;
+    return contentMode === 'papers' ? state.paperFilters : state.articleFilters;
+  });
   const updateSummary = useArticleStore((state) => state.updateSummary);
+  const setContentMode = useArticleStore((state) => state.setContentMode);
   const setLastArticleId = useArticleStore((state) => state.setLastArticleId);
   const setArticleScrollPosition = useArticleStore((state) => state.setArticleScrollPosition);
   const pinPriorityOnTop = usePreferencesStore((state) => state.pinPriorityOnTop);
-  const papersVisibility = usePreferencesStore((state) => state.papersVisibility);
   const fontSize = usePreferencesStore((state) => state.fontSize);
   const showReadingProgress = usePreferencesStore((state) => state.showReadingProgress);
   const obsidianVault = usePreferencesStore((state) => state.obsidianVault);
@@ -73,8 +93,8 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const noteDraftRef = useRef(noteDraft);
   const readingMinutes = useMemo(() => estimateReadingMinutes(article.body), [article.body]);
   const ordered = useMemo(
-    () => filterAndSortArticles(applyPapersVisibility(articles, papersVisibility), filters, { pinPriorityOnTop }),
-    [articles, filters, pinPriorityOnTop, papersVisibility]
+    () => filterAndSortArticles(applyContentMode(articles, contentMode), filters, { pinPriorityOnTop, contentMode }),
+    [articles, contentMode, filters, pinPriorityOnTop]
   );
   const currentIndex = ordered.findIndex((item) => item.id === article.id);
   const previous = currentIndex > 0 ? ordered[currentIndex - 1] : undefined;
@@ -82,6 +102,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
   const tags = article.frontmatter.tags ?? [];
   const priority = priorityValue(article);
   const arxivId = article.frontmatter.arxiv_id;
+  const paperStatus = article.frontmatter.paper_status ?? 'inbox';
   const obsidianUri = useMemo(
     () => buildObsidianUri(obsidianVault, obsidianPipelinePath, article.path),
     [obsidianVault, obsidianPipelinePath, article.path]
@@ -209,6 +230,82 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     [article, busy, ordered, router, updateSummary]
   );
 
+  const handlePin = useCallback(async () => {
+    if (busy) return;
+    const pinned = article.frontmatter.reader_pinned !== true;
+    const updatedAt = new Date().toISOString();
+    const by = 'reader';
+    const frontmatter = { ...article.frontmatter };
+    delete frontmatter.reader_priority;
+    if (pinned) {
+      frontmatter.reader_pinned = true;
+      frontmatter.reader_pinned_by = by;
+      frontmatter.reader_pinned_at = updatedAt;
+    } else {
+      delete frontmatter.reader_pinned;
+      delete frontmatter.reader_pinned_by;
+      delete frontmatter.reader_pinned_at;
+    }
+    const optimistic = { ...article, frontmatter };
+    setArticle(optimistic);
+    updateSummary(optimistic);
+    await updateCachedPin(article.id, pinned, by, updatedAt);
+
+    setBusy(true);
+    try {
+      if (!navigator.onLine) throw new Error('offline');
+      const response = await fetch(`/api/articles/${article.id}/pin`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pinned, by })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const saved = (await response.json()) as Article;
+      setArticle(saved);
+      updateSummary(saved);
+      await saveArticle(saved);
+      setFeedback({ tone: 'success', message: pinned ? 'Pinned to top.' : 'Pin removed.' });
+    } catch {
+      await queuePin({ id: article.id, path: article.path, pinned, by, updatedAt });
+      setFeedback({ tone: 'info', message: 'Pin change queued for sync.' });
+    } finally {
+      setBusy(false);
+    }
+  }, [article, busy, updateSummary]);
+
+  const handlePaperStatus = useCallback(async (status: PaperStatus) => {
+    if (!isPaper || busy || paperStatus === status) return;
+    const updatedAt = new Date().toISOString();
+    const optimistic = {
+      ...article,
+      frontmatter: { ...article.frontmatter, paper_status: status, paper_status_updated_at: updatedAt }
+    };
+    setArticle(optimistic);
+    updateSummary(optimistic);
+    await updateCachedPaperStatus(article.id, status, updatedAt);
+
+    setBusy(true);
+    try {
+      if (!navigator.onLine) throw new Error('offline');
+      const response = await fetch(`/api/articles/${article.id}/paper-status`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const saved = (await response.json()) as Article;
+      setArticle(saved);
+      updateSummary(saved);
+      await saveArticle(saved);
+      setFeedback({ tone: 'success', message: `Paper moved to ${paperStatusLabel(status)}.` });
+    } catch {
+      await queuePaperStatus({ id: article.id, path: article.path, status, updatedAt });
+      setFeedback({ tone: 'info', message: 'Paper status queued for sync.' });
+    } finally {
+      setBusy(false);
+    }
+  }, [article, busy, isPaper, paperStatus, updateSummary]);
+
   const runHighlightAction = useCallback(
     async (action: 'add' | 'remove') => {
       const snapshot = selectionRef.current ?? selection;
@@ -277,13 +374,14 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
     setNoteDraft(initialArticle.frontmatter.reader_note ?? '');
     setTocOpen(false);
     setLastArticleId(initialArticle.id);
+    setContentMode(initialArticle.collection === 'papers' ? 'papers' : 'articles');
     const savedScrollY = useArticleStore.getState().articleScrollPositions[initialArticle.id] ?? 0;
     const restore = window.setTimeout(() => {
       const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
       window.scrollTo({ top: Math.min(savedScrollY, maxY), behavior: 'auto' });
     }, 80);
     return () => window.clearTimeout(restore);
-  }, [initialArticle, setLastArticleId]);
+  }, [initialArticle, setContentMode, setLastArticleId]);
 
   // Assign stable slug ids to rendered headings and build the TOC from the DOM,
   // so TOC targets always match what is actually on screen (math, links, …).
@@ -393,9 +491,9 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
       }
       if (event.key === 'ArrowLeft') goTo(previous?.id);
       if (event.key === 'ArrowRight') goTo(next?.id);
-      if (event.key === '1') void handleRate('irrelevant');
-      if (event.key === '2') void handleRate('relevant');
-      if (event.key === '3') void handleRate('high_relevant');
+      if (!isPaper && event.key === '1') void handleRate('irrelevant');
+      if (!isPaper && event.key === '2') void handleRate('relevant');
+      if (!isPaper && event.key === '3') void handleRate('high_relevant');
       if (event.key === 'c') setTocOpen((value) => !value);
       if (event.key === 'n') {
         event.preventDefault();
@@ -409,7 +507,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [article.frontmatter.url, goTo, handleRate, next?.id, previous?.id, router, showShortcuts, tocOpen]);
+  }, [article.frontmatter.url, goTo, handleRate, isPaper, next?.id, previous?.id, router, showShortcuts, tocOpen]);
 
   // Persist an unsaved note draft when the reader unmounts.
   useEffect(() => {
@@ -433,7 +531,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
               </h1>
               <p className="truncate font-meta text-[11px] text-mutedink">
                 {[
-                  article.frontmatter.source,
+                  isPaper && article.frontmatter.authors?.length ? article.frontmatter.authors.join(', ') : article.frontmatter.source,
                   arxivId ? `arXiv:${normalizeArxivId(arxivId)}` : undefined,
                   typeof article.frontmatter.score === 'number' ? `score ${article.frontmatter.score.toFixed(1)}` : undefined,
                   readingMinutes > 0 ? `${readingMinutes} min` : undefined
@@ -442,6 +540,17 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
                   .join(' · ')}
               </p>
             </div>
+            <Button
+              type="button"
+              size="icon"
+              variant={article.frontmatter.reader_pinned ? 'default' : 'ghost'}
+              onClick={() => void handlePin()}
+              disabled={busy}
+              aria-label={article.frontmatter.reader_pinned ? 'Remove pin' : 'Pin to top'}
+              title={article.frontmatter.reader_pinned ? 'Remove pin' : 'Pin to top'}
+            >
+              {article.frontmatter.reader_pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+            </Button>
             {toc.length > 1 ? (
               <Button type="button" size="icon" variant="ghost" onClick={() => setTocOpen(true)} aria-label="Table of contents" title="Contents (c)">
                 <ListTree className="h-4 w-4" />
@@ -465,7 +574,12 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
           {tags.length > 0 || priority > 0 ? (
             <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1 pl-[3.25rem]">
               {priority > 0 ? (
-                <Badge className="shrink-0 border-amber-600/60 text-amber-700 dark:border-amber-400/60 dark:text-amber-300">prio {priority}</Badge>
+                <Badge
+                  className="shrink-0 border-amber-600/60 text-amber-700 dark:border-amber-400/60 dark:text-amber-300"
+                  title={article.frontmatter.reader_pinned_by ? `Pinned by ${article.frontmatter.reader_pinned_by}` : 'Pinned'}
+                >
+                  pinned
+                </Badge>
               ) : null}
               {tags.map((tag) => (
                 <Badge key={tag} className="shrink-0">
@@ -540,6 +654,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
 
       <main className="mx-auto max-w-[760px] px-4 py-6" onMouseUp={captureSelection} onTouchEnd={() => window.setTimeout(captureSelection, 80)}>
         <SwipeContainer onNext={() => goTo(next?.id)} onPrev={() => goTo(previous?.id)}>
+          {isPaper ? <PaperMetadata article={article} status={paperStatus} /> : null}
           <div ref={proseRef}>
             <MarkdownRenderer content={article.body} fontSize={fontSize} />
           </div>
@@ -557,7 +672,7 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
               value={noteDraft}
               onChange={(event) => setNoteDraft(event.target.value)}
               onBlur={() => void saveNote(noteDraft)}
-              placeholder="Your thoughts on this article — saved into the markdown frontmatter. (n)"
+              placeholder={`Your thoughts on this ${isPaper ? 'paper' : 'article'} — saved into the markdown frontmatter. (n)`}
               rows={4}
               className="w-full resize-y rounded-sm border border-hairline bg-surface p-3 text-sm leading-relaxed text-ink outline-none transition placeholder:text-mutedink focus:border-accent"
             />
@@ -572,8 +687,17 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
               {arxivId ? (
                 <>
                   <ToolLink href={arxivAbsUrl(arxivId)} label="arXiv abs" icon={<ExternalLink className="h-4 w-4 shrink-0" />} />
-                  <ToolLink href={arxivPdfUrl(arxivId)} label="PDF" icon={<FileDown className="h-4 w-4 shrink-0" />} />
+                  <ToolLink href={article.frontmatter.pdf_url || arxivPdfUrl(arxivId)} label="PDF" icon={<FileDown className="h-4 w-4 shrink-0" />} />
                 </>
+              ) : null}
+              {!arxivId && article.frontmatter.pdf_url ? (
+                <ToolLink href={article.frontmatter.pdf_url} label="PDF" icon={<FileDown className="h-4 w-4 shrink-0" />} />
+              ) : null}
+              {article.frontmatter.html_url && article.frontmatter.html_url !== article.frontmatter.url ? (
+                <ToolLink href={article.frontmatter.html_url} label="Paper page" icon={<ExternalLink className="h-4 w-4 shrink-0" />} />
+              ) : null}
+              {article.frontmatter.doi ? (
+                <ToolLink href={`https://doi.org/${article.frontmatter.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '')}`} label="DOI" icon={<ExternalLink className="h-4 w-4 shrink-0" />} />
               ) : null}
               <Button type="button" variant="secondary" size="sm" onClick={() => void copyToClipboard(buildBibtex(article.frontmatter), 'BibTeX')}>
                 <Quote className="h-4 w-4" /> BibTeX
@@ -598,15 +722,107 @@ export function ArticleReader({ article: initialArticle }: Props): React.ReactEl
         </SwipeContainer>
       </main>
 
-      <RatingActionBar currentStatus={article.frontmatter.reader_status} onRate={handleRate} disabled={busy} />
+      {isPaper ? (
+        <PaperActionBar currentStatus={paperStatus} onChange={handlePaperStatus} disabled={busy} />
+      ) : (
+        <RatingActionBar currentStatus={article.frontmatter.reader_status} onRate={handleRate} disabled={busy} />
+      )}
 
       {tocOpen ? (
         <TocOverlay toc={toc} activeId={activeHeading} onClose={() => setTocOpen(false)} />
       ) : null}
 
-      {showShortcuts ? <ShortcutsOverlay onClose={() => setShowShortcuts(false)} /> : null}
+      {showShortcuts ? <ShortcutsOverlay isPaper={isPaper} onClose={() => setShowShortcuts(false)} /> : null}
     </div>
   );
+}
+
+function PaperMetadata({ article, status }: { article: Article; status: PaperStatus }): React.ReactElement {
+  const fm = article.frontmatter;
+  const authors = fm.authors?.length ? fm.authors.join(', ') : fm.author;
+  const identity = fm.arxiv_id ? `arXiv:${normalizeArxivId(fm.arxiv_id)}` : fm.doi ? `DOI:${fm.doi}` : undefined;
+  return (
+    <section className="mb-7 border-b border-hairline pb-5" aria-label="Paper metadata">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="theorem-label text-mutedink">Paper workspace</span>
+        <Badge className={paperStatusClass(status)}>{paperStatusLabel(status)}</Badge>
+        {fm.matched_authors?.length ? <Badge className="border-[var(--positive)] text-[var(--positive)]">watched author</Badge> : null}
+        {fm.matched_topics?.length ? <Badge className="border-[var(--accent)] text-[var(--accent)]">watched topic</Badge> : null}
+        {fm.reading_difficulty ? <Badge>{fm.reading_difficulty}</Badge> : null}
+      </div>
+      <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[7rem_1fr]">
+        {authors ? <MetadataRow label="Authors" value={authors} /> : null}
+        {identity ? <MetadataRow label="Identifier" value={identity} /> : null}
+        {fm.primary_category ? <MetadataRow label="Category" value={fm.primary_category} /> : null}
+        {fm.matched_authors?.length ? <MetadataRow label="Matched" value={fm.matched_authors.join(', ')} /> : null}
+        {fm.matched_topics?.length ? <MetadataRow label="Topics" value={fm.matched_topics.join(', ')} /> : null}
+        {typeof fm.score === 'number' ? (
+          <MetadataRow
+            label="Score"
+            value={`${fm.score.toFixed(1)} (content ${fm.content_score?.toFixed(1) ?? '-'}, source ${fm.source_priority?.toFixed(1) ?? '-'})`}
+          />
+        ) : null}
+        {fm.inclusion_reason && fm.inclusion_reason !== 'watched_author' ? <MetadataRow label="Included by" value={fm.inclusion_reason.replaceAll('_', ' ')} /> : null}
+      </dl>
+    </section>
+  );
+}
+
+function MetadataRow({ label, value }: { label: string; value: string }): React.ReactElement {
+  return (
+    <div className="contents">
+      <dt className="font-meta text-[11px] uppercase text-mutedink">{label}</dt>
+      <dd className="min-w-0 break-words text-ink">{value}</dd>
+    </div>
+  );
+}
+
+const paperWorkflowStatuses: PaperStatus[] = ['inbox', 'skimmed', 'reading', 'reference', 'dismissed'];
+
+function PaperActionBar({
+  currentStatus,
+  onChange,
+  disabled
+}: {
+  currentStatus: PaperStatus;
+  onChange: (status: PaperStatus) => void;
+  disabled?: boolean;
+}): React.ReactElement {
+  return (
+    <div className="reader-safe-bottom reader-surface-bar fixed inset-x-0 bottom-0 z-30 border-t px-3 pt-3 text-[var(--foreground)]">
+      <div className="mx-auto flex max-w-[760px] gap-1.5 overflow-x-auto" role="group" aria-label="Paper workflow status">
+        {paperWorkflowStatuses.map((status) => (
+          <Button
+            key={status}
+            type="button"
+            size="sm"
+            variant={currentStatus === status ? 'default' : 'secondary'}
+            className="min-w-fit flex-1"
+            disabled={disabled}
+            onClick={() => onChange(status)}
+            aria-pressed={currentStatus === status}
+          >
+            {paperStatusLabel(status)}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function paperStatusLabel(status: PaperStatus): string {
+  if (status === 'skimmed') return 'Skimmed';
+  if (status === 'reading') return 'Reading';
+  if (status === 'reference') return 'Reference';
+  if (status === 'dismissed') return 'Dismissed';
+  return 'Inbox';
+}
+
+function paperStatusClass(status: PaperStatus): string {
+  if (status === 'reading') return 'border-[var(--accent)] text-[var(--accent)]';
+  if (status === 'reference') return 'border-[var(--positive)] text-[var(--positive)]';
+  if (status === 'dismissed') return 'border-[var(--destructive)] text-[var(--destructive)]';
+  return '';
 }
 
 function ToolLink({ href, label, icon, shortcut }: { href: string; label: string; icon: React.ReactNode; shortcut?: string }): React.ReactElement {
@@ -660,12 +876,14 @@ function TocOverlay({ toc, activeId, onClose }: { toc: TocEntry[]; activeId: str
   );
 }
 
-function ShortcutsOverlay({ onClose }: { onClose: () => void }): React.ReactElement {
+function ShortcutsOverlay({ isPaper, onClose }: { isPaper: boolean; onClose: () => void }): React.ReactElement {
   const rows: Array<{ keys: string; label: string }> = [
     { keys: '←  →', label: 'Previous / next article' },
-    { keys: '1', label: 'Rate irrelevant' },
-    { keys: '2', label: 'Rate relevant' },
-    { keys: '3', label: 'Rate high relevant' },
+    ...(!isPaper ? [
+      { keys: '1', label: 'Rate irrelevant' },
+      { keys: '2', label: 'Rate relevant' },
+      { keys: '3', label: 'Rate high relevant' }
+    ] : []),
     { keys: 'c', label: 'Table of contents' },
     { keys: 'n', label: 'Focus note' },
     { keys: 'o', label: 'Open original source' },

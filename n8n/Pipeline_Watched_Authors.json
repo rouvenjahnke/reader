@@ -1,0 +1,797 @@
+{
+  "name": "Pipeline_Watched_Authors",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "15 6 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "2c54fbfc-2615-42e2-84d3-9bea7a9a794a",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT 'author'::text AS target_type,\n       id AS target_id,\n       display_name AS target_name,\n       semantic_scholar_author_id,\n       NULL::text AS query,\n       source_priority,\n       notify\nFROM watched_authors\nWHERE active = TRUE\n  AND semantic_scholar_author_id IS NOT NULL\nUNION ALL\nSELECT 'topic'::text AS target_type,\n       id AS target_id,\n       display_name AS target_name,\n       NULL::text AS semantic_scholar_author_id,\n       query,\n       source_priority,\n       notify\nFROM watched_topics\nWHERE active = TRUE\nORDER BY target_type, target_name;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        0
+      ],
+      "id": "19718f51-354b-4b42-ba91-f6281433b8d6",
+      "name": "Load watched targets",
+      "credentials": {
+        "postgres": {
+          "id": "XrC8CKSzlM25JCKY",
+          "name": "math-corpus-pg"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.target_type === 'author'\n  ? 'https://api.semanticscholar.org/graph/v1/author/' + encodeURIComponent($json.semantic_scholar_author_id) + '/papers?limit=500&fields=' + encodeURIComponent('paperId,externalIds,url,title,abstract,year,publicationDate,authors,fieldsOfStudy,publicationTypes,openAccessPdf,isOpenAccess')\n  : 'https://api.semanticscholar.org/graph/v1/paper/search/bulk?query=' + encodeURIComponent($json.query || $json.target_name) + '&sort=publicationDate:desc&publicationDateOrYear=' + new Date(Date.now() - Number($env.WATCH_LOOKBACK_DAYS || 14) * 86400000).toISOString().slice(0, 10) + ':&fields=' + encodeURIComponent('paperId,externalIds,url,title,abstract,year,publicationDate,authors,fieldsOfStudy,publicationTypes,openAccessPdf,isOpenAccess') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.SEMANTIC_SCHOLAR_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1100
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        464,
+        0
+      ],
+      "id": "13360aae-21cf-4bbc-a263-093b0843994e",
+      "name": "Fetch watched papers",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// n8n Code node: flatten Semantic Scholar responses and merge duplicate matches.\nconst lookbackDays = Math.max(1, Number($env.WATCH_LOOKBACK_DAYS || 14));\nconst cutoff = Date.now() - lookbackDays * 24 * 60 * 60 * 1000;\nconst candidates = new Map();\n\nconst unique = (values) => [...new Set(values.filter(Boolean))];\nconst paperKey = (paper) =>\n  paper.paperId ||\n  paper.externalIds?.ArXiv ||\n  paper.externalIds?.DOI ||\n  String(paper.title || '').toLowerCase().replace(/\\s+/g, '');\n\n$input.all().forEach((response, responseIndex) => {\n  const target = $('Load watched targets').itemMatching(responseIndex).json;\n  const papers = Array.isArray(response.json.data) ? response.json.data : [];\n\n  papers.forEach((paper) => {\n    const publishedAt = paper.publicationDate || null;\n    const publishedTime = publishedAt ? Date.parse(publishedAt) : Number.NaN;\n    if (!Number.isFinite(publishedTime) || publishedTime < cutoff) return;\n\n    const arxivId = paper.externalIds?.ArXiv || null;\n    const doi = paper.externalIds?.DOI || null;\n    const authors = (paper.authors || []).map((author) => author.name).filter(Boolean);\n    const fields = Array.isArray(paper.fieldsOfStudy) ? paper.fieldsOfStudy : [];\n    const pdfUrl = paper.openAccessPdf?.url || null;\n    const htmlUrl = arxivId\n      ? `https://arxiv.org/abs/${arxivId}`\n      : doi\n        ? `https://doi.org/${doi}`\n        : paper.url || null;\n    const isAuthorTarget = target.target_type === 'author';\n    const key = paperKey(paper);\n    const previous = candidates.get(key);\n\n    const normalized = {\n      semantic_scholar_paper_id: paper.paperId || null,\n      arxiv_id: arxivId,\n      doi,\n      pdf_url: pdfUrl,\n      html_url: htmlUrl,\n      url: htmlUrl,\n      fetch_url: arxivId ? `https://arxiv.org/html/${arxivId}` : pdfUrl || htmlUrl,\n      title: paper.title || 'Untitled paper',\n      authors,\n      abstract: paper.abstract || '',\n      published_at: publishedAt,\n      updated_at: publishedAt,\n      primary_category: arxivId ? 'arXiv' : fields[0] || 'unknown',\n      all_categories: fields,\n      msc_codes: [],\n      matched_categories: [],\n      matched_authors: isAuthorTarget ? [target.target_name] : [],\n      matched_keywords: isAuthorTarget ? [] : [target.target_name],\n      inclusion_reason: isAuthorTarget ? 'watched_author' : 'watched_topic',\n      source_priority: Number(target.source_priority) || (isAuthorTarget ? 8 : 6),\n      notify: Boolean(target.notify),\n    };\n\n    if (!previous) {\n      candidates.set(key, normalized);\n      return;\n    }\n\n    previous.matched_authors = unique([\n      ...previous.matched_authors,\n      ...normalized.matched_authors,\n    ]);\n    previous.matched_keywords = unique([\n      ...previous.matched_keywords,\n      ...normalized.matched_keywords,\n    ]);\n    previous.source_priority = Math.max(previous.source_priority, normalized.source_priority);\n    previous.notify = previous.notify || normalized.notify;\n    previous.inclusion_reason = previous.matched_authors.length > 0 && previous.matched_keywords.length > 0\n      ? 'watched_author_and_topic'\n      : previous.inclusion_reason;\n  });\n});\n\nreturn [...candidates.values()].map((paper) => ({ json: paper }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        0
+      ],
+      "id": "6362c936-16ab-4db3-90e9-c427081d0882",
+      "name": "Parse + flatten"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT EXISTS (\n  SELECT 1\n  FROM arxiv_papers\n  WHERE (NULLIF($1, '') IS NOT NULL AND arxiv_id = NULLIF($1, ''))\n     OR (NULLIF($2, '') IS NOT NULL AND LOWER(doi) = LOWER(NULLIF($2, '')))\n     OR (NULLIF($3, '') IS NOT NULL AND semantic_scholar_paper_id = NULLIF($3, ''))\n     OR LOWER(REGEXP_REPLACE(title, '\\s+', '', 'g')) =\n        LOWER(REGEXP_REPLACE($4, '\\s+', '', 'g'))\n) AS is_duplicate;",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.arxiv_id || '',\n  $json.doi || '',\n  $json.semantic_scholar_paper_id || '',\n  $json.title\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1184,
+        0
+      ],
+      "id": "948e6856-fc09-4729-a452-c7d06ccc7dce",
+      "name": "Dedup check",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "XrC8CKSzlM25JCKY",
+          "name": "math-corpus-pg"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// n8n Code node: restore each candidate after the parameterized dedup query.\nreturn $input.all().flatMap((row, index) => {\n  if (Boolean(row.json.is_duplicate)) return [];\n  return [{\n    json: $('Parse + flatten').itemMatching(index).json,\n    pairedItem: { item: index },\n  }];\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        0
+      ],
+      "id": "7682986d-e3ee-4f4e-bcd7-33f2a170a4d1",
+      "name": "Continue if new"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.arxiv_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.pdf_url }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.html_url }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1664,
+        0
+      ],
+      "id": "f672c812-601b-4d32-8fd7-9c00b0bc4062",
+      "name": "Route full text"
+    },
+    {
+      "parameters": {
+        "command": "=/opt/pipeline-mvp/venv/bin/python /opt/pipeline-mvp/scripts/fetch_arxiv_chunks.py '{{ JSON.stringify($json) }}'"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1904,
+        -240
+      ],
+      "id": "75280192-9ccb-4e42-b795-e4ee7db9c79d",
+      "name": "Execute Command"
+    },
+    {
+      "parameters": {
+        "command": "=/opt/pipeline-mvp/venv/bin/python /opt/pipeline-mvp/scripts/fetch_pdf_chunks.py '{{ JSON.stringify($json) }}'"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1904,
+        -80
+      ],
+      "id": "6f24923e-8733-4d3d-80f7-e6a079c7a83b",
+      "name": "Execute Command1"
+    },
+    {
+      "parameters": {
+        "command": "=/opt/pipeline-mvp/venv/bin/python /opt/pipeline-mvp/scripts/fetch_html_chunks.py '{{ JSON.stringify($json) }}'"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1904,
+        80
+      ],
+      "id": "2be1251c-2f17-4bb2-b926-5f467faf3d27",
+      "name": "Execute Command2"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n Code node, run once for each item: merge extractor output with metadata.\nconst source = $('Continue if new').item.json;\nlet extracted = {};\n\ntry {\n  extracted = JSON.parse($json.stdout || '{}');\n} catch {\n  extracted = { text_chunks: [source.abstract || source.title] };\n}\n\nconst textChunks = Array.isArray(extracted.text_chunks)\n  ? extracted.text_chunks.filter((chunk) => typeof chunk === 'string' && chunk.trim())\n  : [];\n\nreturn {\n  json: {\n    ...source,\n    ...extracted,\n    text_chunks: textChunks.length > 0\n      ? textChunks\n      : [source.abstract || source.title],\n  },\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2144,
+        0
+      ],
+      "id": "f4add3c0-08a1-4b5a-8d90-f87edba28c95",
+      "name": "Parse stdout"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.66.112:4000/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": \"openai/gpt-4o\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Return only valid JSON: {\\\"summary_de\\\":\\\"2-3 German sentences\\\",\\\"profile_connection\\\":\\\"one sentence\\\",\\\"reading_difficulty\\\":\\\"accessible|graduate|research\\\",\\\"key_concepts\\\":[\\\"concept\\\"],\\\"content_score\\\":0}. content_score must be a number from 0 to 10 and rate relevance and substance, independent of author prestige.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": $('Parse stdout').item.json.title + \"\\n\\nAuthors: \" + ($('Parse stdout').item.json.authors || []).join(', ') + \"\\n\\nAbstract:\\n\" + ($('Parse stdout').item.json.abstract || '').slice(0, 4000)\n    }\n  ]\n} }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "0e2d801a-84ef-48ea-ac82-bf3050d8cb00",
+      "name": "LLM enrich + content score",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2384,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "6LePySC9RG7hDQ1q",
+          "name": "litellm reading_klist"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n Code node, run once for each item: enrich, score, and render a Paper note.\nconst paper = $('Parse stdout').item.json;\nlet enrichment;\n\ntry {\n  const raw = $json.choices?.[0]?.message?.content || '{}';\n  enrichment = JSON.parse(raw.replace(/```json|```/g, '').trim());\n} catch {\n  enrichment = {\n    summary_de: '',\n    profile_connection: '',\n    reading_difficulty: 'unknown',\n    key_concepts: [],\n    content_score: 5,\n  };\n}\n\nconst clamp = (value, min, max) => Math.min(max, Math.max(min, value));\nconst round1 = (value) => Math.round(value * 10) / 10;\nconst yamlString = (value) => JSON.stringify(String(value || ''));\nconst slugify = (value) => String(value || '')\n  .toLowerCase()\n  .replace(/\\u00e4/g, 'ae')\n  .replace(/\\u00f6/g, 'oe')\n  .replace(/\\u00fc/g, 'ue')\n  .replace(/\\u00df/g, 'ss')\n  .replace(/[^a-z0-9]+/g, '-')\n  .replace(/^-+|-+$/g, '')\n  .substring(0, 60);\nconst deterministicUUID = (seed) => {\n  const value = String(seed || 'unknown');\n  let h1 = 0x9e3779b9;\n  let h2 = 0x243f6a88;\n  for (let index = 0; index < value.length; index += 1) {\n    h1 = Math.imul(h1 ^ value.charCodeAt(index), 0x9e3779b9);\n    h2 = Math.imul(h2 ^ value.charCodeAt(index), 0x6c62272e);\n  }\n  h1 = (h1 ^ (h1 >>> 16)) >>> 0;\n  h2 = (h2 ^ (h2 >>> 16)) >>> 0;\n  const h3 = Math.imul(h1, 0x85ebca6b) >>> 0;\n  const h4 = Math.imul(h2, 0xc2b2ae35) >>> 0;\n  const hex = (number, length) => number.toString(16).padStart(length, '0');\n  return `${hex(h1, 8)}-${hex(h2 & 0xffff, 4)}-4${hex(h3 & 0xfff, 3)}-${hex((h4 & 0x3fff) | 0x8000, 4)}-${hex(h1, 8)}${hex(h2 & 0xffff, 4)}`;\n};\n\nconst contentScore = clamp(Number(enrichment.content_score) || 5, 0, 10);\nconst parsedSourcePriority = Number(paper.source_priority);\nconst sourcePriority = clamp(Number.isFinite(parsedSourcePriority) ? parsedSourcePriority : 7, 0, 10);\nconst score = round1(0.85 * contentScore + 0.15 * sourcePriority);\nconst stableId = paper.semantic_scholar_paper_id || paper.arxiv_id || paper.doi || paper.title;\nconst pointId = deterministicUUID(`${stableId}_chunk_0`);\nconst date = (paper.published_at || new Date().toISOString()).split('T')[0];\nconst identifier = paper.arxiv_id\n  ? `arxiv-${paper.arxiv_id.replace('/', '-')}`\n  : `s2-${String(paper.semantic_scholar_paper_id || paper.doi || 'unknown').replace(/[^a-zA-Z0-9.-]+/g, '-')}`;\nconst filename = `${date}-${identifier}-${slugify(paper.title).substring(0, 30)}.md`;\nconst relativePath = `math_preprints/${filename}`;\nconst authors = Array.isArray(paper.authors) ? paper.authors : [];\nconst concepts = Array.isArray(enrichment.key_concepts) ? enrichment.key_concepts : [];\nconst categories = Array.isArray(paper.all_categories) ? paper.all_categories : [];\nconst tags = [...new Set(['paper', 'watched', ...categories.map(slugify)].filter(Boolean))];\nconst matchDescription = [\n  paper.matched_authors?.length ? `authors: ${paper.matched_authors.join(', ')}` : null,\n  paper.matched_keywords?.length ? `topics: ${paper.matched_keywords.join(', ')}` : null,\n].filter(Boolean).join(' | ');\nconst extractedText = Array.isArray(paper.text_chunks)\n  ? paper.text_chunks.filter(Boolean).join('\\n\\n')\n  : '';\n\nconst frontmatter = `---\\n` +\n  `title: ${yamlString(paper.title)}\\n` +\n  `url: ${yamlString(paper.html_url || paper.url)}\\n` +\n  `source: \"Semantic Scholar Watchlist\"\\n` +\n  `author: ${yamlString(authors.join(', '))}\\n` +\n  `authors: ${JSON.stringify(authors)}\\n` +\n  `arxiv_id: ${yamlString(paper.arxiv_id)}\\n` +\n  `doi: ${yamlString(paper.doi)}\\n` +\n  `semantic_scholar_paper_id: ${yamlString(paper.semantic_scholar_paper_id)}\\n` +\n  `pdf_url: ${yamlString(paper.pdf_url)}\\n` +\n  `html_url: ${yamlString(paper.html_url)}\\n` +\n  `primary_category: ${yamlString(paper.primary_category)}\\n` +\n  `all_categories: ${JSON.stringify(categories)}\\n` +\n  `published: ${paper.published_at || ''}\\n` +\n  `fetched: ${new Date().toISOString()}\\n` +\n  `type: preprint\\n` +\n  `score: ${score.toFixed(1)}\\n` +\n  `content_score: ${contentScore.toFixed(1)}\\n` +\n  `source_priority: ${sourcePriority.toFixed(1)}\\n` +\n  `scoring_version: content-85_source-15_v1\\n` +\n  `reader_status: unrated\\n` +\n  `paper_status: inbox\\n` +\n  `reading_difficulty: ${yamlString(enrichment.reading_difficulty || 'unknown')}\\n` +\n  `inclusion_reason: ${yamlString(paper.inclusion_reason)}\\n` +\n  `matched_authors: ${JSON.stringify(paper.matched_authors || [])}\\n` +\n  `matched_topics: ${JSON.stringify(paper.matched_keywords || [])}\\n` +\n  `key_concepts: ${JSON.stringify(concepts)}\\n` +\n  `tags: ${JSON.stringify(tags)}\\n` +\n  `qdrant_point_id: ${pointId}\\n` +\n  `qdrant_collection: math_corpus\\n` +\n  `embedding_model: voyage-4-large\\n` +\n  `---\\n`;\n\nconst body = `\\n# ${paper.title}\\n\\n` +\n  `**${authors.join(', ') || 'Unknown authors'}** - ${paper.primary_category || 'unknown'}\\n\\n` +\n  `> [!info] Paper\\n` +\n  `> [Paper page](${paper.html_url || paper.url})${paper.pdf_url ? ` - [PDF](${paper.pdf_url})` : ''}\\n` +\n  `> Reader-Score: **${score.toFixed(1)}** ` +\n  `(Inhalt ${contentScore.toFixed(1)}, Quelle ${sourcePriority.toFixed(1)})\\n` +\n  `> Inclusion: **${paper.inclusion_reason}**${matchDescription ? ` - ${matchDescription}` : ''}\\n\\n` +\n  `## Abstract\\n\\n${paper.abstract || ''}\\n\\n` +\n  (enrichment.summary_de ? `## Zusammenfassung (DE)\\n\\n${enrichment.summary_de}\\n\\n` : '') +\n  (enrichment.profile_connection ? `## Profil-Relevanz\\n\\n${enrichment.profile_connection}\\n\\n` : '') +\n  `## Wissenschaftliche Arbeit\\n\\n` +\n  `- [ ] Abstract gelesen\\n` +\n  `- [ ] Hauptresultat identifiziert\\n` +\n  `- [ ] Beweisidee notiert\\n` +\n  `- [ ] Verbindungen zu bestehenden Notizen erfasst\\n` +\n  `- [ ] Zitation uebernommen\\n\\n` +\n  (extractedText ? `---\\n\\n## Extrahierter Volltext\\n\\n${extractedText}\\n` : '');\n\nreturn {\n  json: {\n    ...paper,\n    ...enrichment,\n    content_score: contentScore,\n    source_priority: sourcePriority,\n    score,\n    scoring_version: 'content-85_source-15_v1',\n    qdrant_point_id: pointId,\n    relative_path: relativePath,\n    content: frontmatter + body,\n  },\n};\n"
+      },
+      "id": "84041650-9543-454f-a9f7-abe5c5db1547",
+      "name": "Merge + render markdown",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2624,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=http://192.168.66.45:11005/remote.php/dav/files/rouvenjahnke/Workstation/Projects/maths/00_inbox/reader-pipeline/{{ $('Build Qdrant points').item.json.relative_path }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/markdown",
+        "body": "={{ $('Build Qdrant points').item.json.content }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "id": "e356c637-9d4b-4815-9b72-598f9f58dc1c",
+      "name": "Nextcloud write paper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3584,
+        0
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "iGjjYtpOYpvf7KhX",
+          "name": "nextcloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO arxiv_papers (\n  semantic_scholar_paper_id, arxiv_id, doi,\n  primary_category, all_categories, msc_codes,\n  title, authors, abstract, published_at, updated_at, pdf_url, html_url,\n  matched_categories, matched_authors, matched_keywords,\n  inclusion_reason, score, content_score, source_priority, scoring_version, paper_status,\n  qdrant_point_id, nextcloud_path\n) VALUES (\n  $1, $2, $3,\n  $4, $5::text[], $6::text[],\n  $7, $8::text[], $9, $10::timestamptz, $11::timestamptz, $12, $13,\n  $14::text[], $15::text[], $16::text[],\n  $17, $18::float, $19::float, $20::float, $21, 'inbox',\n  $22::uuid, $23\n) ON CONFLICT DO NOTHING;",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Build Qdrant points').item.json.semantic_scholar_paper_id || null,\n  $('Build Qdrant points').item.json.arxiv_id || null,\n  $('Build Qdrant points').item.json.doi || null,\n  $('Build Qdrant points').item.json.primary_category,\n  $('Build Qdrant points').item.json.all_categories || [],\n  $('Build Qdrant points').item.json.msc_codes || [],\n  $('Build Qdrant points').item.json.title,\n  $('Build Qdrant points').item.json.authors || [],\n  $('Build Qdrant points').item.json.abstract,\n  $('Build Qdrant points').item.json.published_at || null,\n  $('Build Qdrant points').item.json.updated_at || null,\n  $('Build Qdrant points').item.json.pdf_url || null,\n  $('Build Qdrant points').item.json.html_url || null,\n  $('Build Qdrant points').item.json.matched_categories || [],\n  $('Build Qdrant points').item.json.matched_authors || [],\n  $('Build Qdrant points').item.json.matched_keywords || [],\n  $('Build Qdrant points').item.json.inclusion_reason,\n  $('Build Qdrant points').item.json.score,\n  $('Build Qdrant points').item.json.content_score,\n  $('Build Qdrant points').item.json.source_priority,\n  $('Build Qdrant points').item.json.scoring_version,\n  $('Build Qdrant points').item.json.qdrant_point_id,\n  $('Build Qdrant points').item.json.relative_path\n] }}"
+        }
+      },
+      "id": "1c971ea3-a579-46e1-aa26-1a21e0bebc56",
+      "name": "Postgres insert paper",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3824,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "XrC8CKSzlM25JCKY",
+          "name": "math-corpus-pg"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) AS total_today\nFROM arxiv_papers\nWHERE fetched_at >= NOW() - INTERVAL '24 hours'\n  AND inclusion_reason LIKE 'watched%';",
+        "options": {}
+      },
+      "id": "0c262942-6704-47ae-858a-6c674873dba1",
+      "name": "Daily watched stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4064,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "XrC8CKSzlM25JCKY",
+          "name": "math-corpus-pg"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.66.112:4000/embeddings",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": \"voyage-4-large\",\n  \"input\": $('Merge + render markdown').item.json.text_chunks\n} }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2864,
+        0
+      ],
+      "id": "19d4e7e6-f282-4286-9d66-430492cd3f7d",
+      "name": "Embed all chunks",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "6LePySC9RG7hDQ1q",
+          "name": "litellm reading_klist"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n Code node, run once for each item: create one Qdrant point per text chunk.\nconst paper = $('Merge + render markdown').item.json;\nconst embeddings = Array.isArray($json.data) ? $json.data : [];\n\nconst deterministicUUID = (seed) => {\n  const value = String(seed || 'unknown');\n  let h1 = 0x9e3779b9;\n  let h2 = 0x243f6a88;\n  for (let index = 0; index < value.length; index += 1) {\n    h1 = Math.imul(h1 ^ value.charCodeAt(index), 0x9e3779b9);\n    h2 = Math.imul(h2 ^ value.charCodeAt(index), 0x6c62272e);\n  }\n  h1 = (h1 ^ (h1 >>> 16)) >>> 0;\n  h2 = (h2 ^ (h2 >>> 16)) >>> 0;\n  const h3 = Math.imul(h1, 0x85ebca6b) >>> 0;\n  const h4 = Math.imul(h2, 0xc2b2ae35) >>> 0;\n  const hex = (number, length) => number.toString(16).padStart(length, '0');\n  return `${hex(h1, 8)}-${hex(h2 & 0xffff, 4)}-4${hex(h3 & 0xfff, 3)}-${hex((h4 & 0x3fff) | 0x8000, 4)}-${hex(h1, 8)}${hex(h2 & 0xffff, 4)}`;\n};\n\nconst stableId = paper.semantic_scholar_paper_id || paper.arxiv_id || paper.doi || paper.title;\nconst chunks = Array.isArray(paper.text_chunks) && paper.text_chunks.length > 0\n  ? paper.text_chunks\n  : [paper.abstract || paper.title];\nconst points = chunks.map((chunk, index) => ({\n  id: deterministicUUID(`${stableId}_chunk_${index}`),\n  vector: embeddings[index]?.embedding || [],\n  payload: {\n    semantic_scholar_paper_id: paper.semantic_scholar_paper_id,\n    arxiv_id: paper.arxiv_id,\n    doi: paper.doi,\n    title: paper.title,\n    authors: paper.authors || [],\n    primary_category: paper.primary_category,\n    published_at: paper.published_at,\n    score: paper.score,\n    content_score: paper.content_score,\n    source_priority: paper.source_priority,\n    inclusion_reason: paper.inclusion_reason,\n    matched_authors: paper.matched_authors || [],\n    matched_topics: paper.matched_keywords || [],\n    chunk_index: index,\n    chunk_total: chunks.length,\n    text_preview: chunk.slice(0, 500),\n    type: 'preprint_chunk',\n  },\n}));\n\nreturn {\n  json: {\n    ...paper,\n    qdrant_points: points,\n    qdrant_point_id: points[0]?.id || paper.qdrant_point_id,\n    num_chunks: points.length,\n  },\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3104,
+        0
+      ],
+      "id": "d6adb28e-6c87-407c-902b-b6738da7603a",
+      "name": "Build Qdrant points"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "http://192.168.66.111:6333/collections/math_corpus/points",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "qdrantApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"points\": $json.qdrant_points } }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3344,
+        -80
+      ],
+      "id": "86c94625-1b24-4f9b-a0f1-a41f7c34f0c8",
+      "name": "Qdrant upsert all chunks",
+      "credentials": {
+        "qdrantApi": {
+          "id": "lvgCbtF4aDcYC9BJ",
+          "name": "Qdrant pct 111"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"chat_id\": $env.TELEGRAM_CHAT_ID,\n  \"text\": \"New watched paper\\n\\n\" + $('Build Qdrant points').item.json.title + \"\\n\" + ($('Build Qdrant points').item.json.authors || []).join(', ') + \"\\nScore: \" + $('Build Qdrant points').item.json.score + \"\\n\" + $('Build Qdrant points').item.json.html_url\n} }}",
+        "options": {}
+      },
+      "id": "aa03e54d-3c5b-47c0-9d1a-1fd95f2ab6ff",
+      "name": "Telegram watched notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        4544,
+        0
+      ]
+    },
+    {
+      "id": "3dbf07fa-cad4-4aac-a38b-0ccfb5c4e45a",
+      "name": "Use abstract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        240
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n Code node, run once for each item: fallback when no full-text URL exists.\nreturn {\n  json: {\n    stdout: JSON.stringify({\n      text_chunks: [$json.abstract || $json.title],\n      full_content_source: 'abstract',\n    }),\n  },\n};\n"
+      }
+    },
+    {
+      "id": "b6447b64-7a13-4a4e-9acc-ae949afba462",
+      "name": "Notify if requested",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4304,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ Boolean($('Build Qdrant points').item.json.notify) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Load watched targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load watched targets": {
+      "main": [
+        [
+          {
+            "node": "Fetch watched papers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch watched papers": {
+      "main": [
+        [
+          {
+            "node": "Parse + flatten",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse + flatten": {
+      "main": [
+        [
+          {
+            "node": "Dedup check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedup check": {
+      "main": [
+        [
+          {
+            "node": "Continue if new",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue if new": {
+      "main": [
+        [
+          {
+            "node": "Route full text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route full text": {
+      "main": [
+        [
+          {
+            "node": "Execute Command",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute Command1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute Command2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Use abstract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Command": {
+      "main": [
+        [
+          {
+            "node": "Parse stdout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Command1": {
+      "main": [
+        [
+          {
+            "node": "Parse stdout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Command2": {
+      "main": [
+        [
+          {
+            "node": "Parse stdout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use abstract": {
+      "main": [
+        [
+          {
+            "node": "Parse stdout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse stdout": {
+      "main": [
+        [
+          {
+            "node": "LLM enrich + content score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM enrich + content score": {
+      "main": [
+        [
+          {
+            "node": "Merge + render markdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge + render markdown": {
+      "main": [
+        [
+          {
+            "node": "Embed all chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed all chunks": {
+      "main": [
+        [
+          {
+            "node": "Build Qdrant points",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Qdrant points": {
+      "main": [
+        [
+          {
+            "node": "Qdrant upsert all chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant upsert all chunks": {
+      "main": [
+        [
+          {
+            "node": "Nextcloud write paper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nextcloud write paper": {
+      "main": [
+        [
+          {
+            "node": "Postgres insert paper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres insert paper": {
+      "main": [
+        [
+          {
+            "node": "Daily watched stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily watched stats": {
+      "main": [
+        [
+          {
+            "node": "Notify if requested",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify if requested": {
+      "main": [
+        [
+          {
+            "node": "Telegram watched notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timezone": "Europe/Berlin"
+  },
+  "pinData": {},
+  "tags": []
+}

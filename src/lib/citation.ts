@@ -11,13 +11,17 @@ export function buildBibtex(fm: ArticleFrontmatter): string {
 
   lines.push(`@misc{${key},`);
   lines.push(`  title = {${escapeBibtex(fm.title)}},`);
-  if (fm.author) lines.push(`  author = {${escapeBibtex(formatBibtexAuthors(fm.author))}},`);
+  const authors = citationAuthors(fm);
+  if (authors) lines.push(`  author = {${escapeBibtex(formatBibtexAuthors(authors))}},`);
   if (year) lines.push(`  year = {${year}},`);
   if (fm.arxiv_id) {
     lines.push(`  eprint = {${normalizeArxivId(fm.arxiv_id)}},`);
     lines.push(`  archivePrefix = {arXiv},`);
     if (fm.primary_category) lines.push(`  primaryClass = {${fm.primary_category}},`);
     lines.push(`  url = {https://arxiv.org/abs/${normalizeArxivId(fm.arxiv_id)}},`);
+  } else if (fm.doi) {
+    lines.push(`  doi = {${normalizeDoi(fm.doi)}},`);
+    lines.push(`  url = {https://doi.org/${normalizeDoi(fm.doi)}},`);
   } else if (fm.url) {
     lines.push(`  url = {${fm.url}},`);
   }
@@ -33,12 +37,14 @@ export function buildBibtex(fm: ArticleFrontmatter): string {
 export function buildPlainCitation(fm: ArticleFrontmatter): string {
   const year = extractYear(fm.published ?? fm.fetched);
   const parts: string[] = [];
-  if (fm.author) parts.push(fm.author);
+  const authors = citationAuthors(fm);
+  if (authors) parts.push(authors);
   if (year) parts.push(`(${year})`);
   parts.push(`"${fm.title}"`);
   if (fm.arxiv_id) parts.push(`arXiv:${normalizeArxivId(fm.arxiv_id)}`);
+  else if (fm.doi) parts.push(`DOI:${normalizeDoi(fm.doi)}`);
   else if (fm.source) parts.push(fm.source);
-  if (!fm.arxiv_id && fm.url) parts.push(fm.url);
+  if (!fm.arxiv_id && !fm.doi && fm.url) parts.push(fm.url);
   return parts.join(' ');
 }
 
@@ -55,7 +61,7 @@ export function arxivPdfUrl(arxivId: string): string {
 }
 
 function citationKey(fm: ArticleFrontmatter, year: string | undefined): string {
-  const lastName = firstAuthorLastName(fm.author) ?? 'unknown';
+  const lastName = firstAuthorLastName(citationAuthors(fm)) ?? 'unknown';
   const firstWord =
     fm.title
       .toLowerCase()
@@ -64,6 +70,14 @@ function citationKey(fm: ArticleFrontmatter, year: string | undefined): string {
       .split(/\s+/)
       .find((word) => word.length > 3) ?? 'untitled';
   return `${lastName}${year ?? ''}${firstWord}`.replace(/[^a-z0-9]/gi, '');
+}
+
+function citationAuthors(fm: ArticleFrontmatter): string | undefined {
+  return fm.authors?.length ? fm.authors.join(' and ') : fm.author;
+}
+
+function normalizeDoi(value: string): string {
+  return value.trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
 }
 
 function firstAuthorLastName(author: string | undefined): string | undefined {

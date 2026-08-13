@@ -31,11 +31,11 @@ Alle Markdown-Dateien unter `NEXTCLOUD_BASE_PATH` werden rekursiv gelesen. Der e
 
 ## Ansichten
 
-- **Liste** (`/`): filterbar nach Status, Quelle, Tags, Pipeline-Ordner, Suche (inkl. Volltext im lokalen Cache) und Sortierung. Dedup, »Neu heute«-, Paper- und Galois-Filter.
+- **Liste** (`/`): getrennte Modi für Articles und Papers, jeweils mit eigener Filterbelegung. Articles werden nach Bewertung, Papers nach Arbeitsstatus (`Inbox`, `Skimmed`, `Reading`, `Reference`, `Dismissed`) gefiltert. Suche, Quellen, Tags, Ordner, Dedup und Sortierung gelten passend zum aktiven Modus.
 - **Triage** (`/triage`): ein unbewerteter Artikel nach dem anderen — Titel, Metadaten, Textvorschau. Bewerten mit `1`/`2`/`3`, Überspringen mit `→`, Fortschrittszähler.
 - **Library** (`/library`): alle als relevant/high bewerteten Artikel, gruppierbar nach Monat, Tag oder Quelle, mit Filter.
-- **Reader** (`/article/[id]`): Inhaltsverzeichnis (`c`), Notiz pro Artikel (`n`, wird ins Frontmatter geschrieben), References & Tools (arXiv abs/PDF, BibTeX- und Zitat-Copy, Obsidian-Deep-Link), Lesefortschritt, Highlights.
-- **Settings** (`/settings`): Präferenzen, Obsidian-Vault-Konfiguration, Papers-Sichtbarkeit, Design-Auswahl (Preprint / Terminal / Legibility), Aktivitäts-Heatmap mit Streaks, Shortcut-Übersicht, Sync-Log.
+- **Reader** (`/article/[id]`): Articles haben die Bewertungsleiste; Papers erhalten eine wissenschaftliche Metadatenansicht, PDF/DOI/BibTeX-Werkzeuge und eine eigene Statusleiste. Notizen, Lesefortschritt und Highlights funktionieren in beiden Modi.
+- **Settings** (`/settings`): Präferenzen, Obsidian-Vault-Konfiguration, Pin-Sortierung, Design-Auswahl (Preprint / Terminal / Legibility), Aktivitäts-Heatmap mit Streaks, Shortcut-Übersicht, Sync-Log.
 - **Command Palette** (`Ctrl/⌘ K`): Fuzzy-Suche über alle Artikel plus Navigations-, Filter-, Sync- und Theme-Befehle.
 
 ## Bedienung
@@ -43,8 +43,19 @@ Alle Markdown-Dateien unter `NEXTCLOUD_BASE_PATH` werden rekursiv gelesen. Der e
 - Artikel öffnen, horizontal wischen oder Pfeiltasten nutzen.
 - `1`, `2`, `3` bewerten als irrelevant, relevant, high relevant — in Liste, Reader und Triage.
 - Text im Reader markieren und `Markieren` tippen. Die App schreibt den Treffer als Obsidian/Markdown-Highlight `==markierter Text==` zurück in die Markdown-Datei.
-- Notizen werden als `reader_note` ins Frontmatter geschrieben; offline erfasste Notizen, Ratings und Highlights landen in einer Pending-Queue und werden beim nächsten Online-Kontakt synchronisiert.
-- Optionales Frontmatter für bewusst vorgemerkte Artikel: `reader_priority: 200` oder `reader_pinned: true` — wird quellenunabhängig nach oben sortiert (abschaltbar unter Settings → »Pin priority on top«).
+- Notizen werden als `reader_note` ins Frontmatter geschrieben; offline erfasste Notizen, Ratings, Highlights, Pins und Paper-Statusänderungen landen in einer Pending-Queue und werden beim nächsten Online-Kontakt synchronisiert.
+- Bewusst vorgemerkte Einträge tragen `reader_pinned: true` samt `reader_pinned_by` und `reader_pinned_at`. Der alte numerische Wert `reader_priority` wird nur noch aus historischen Dateien gelesen und nicht mehr für die Sortierung verwendet.
+- Im Paper-Modus lassen sich die vom Watched-Authors-Workflow erkannten Personen und Themen getrennt durchsuchen und als Filter kombinieren.
+
+## Scoring und n8n
+
+Die Pipeline zeigt nur noch einen Score von 0 bis 10:
+
+```text
+score = 0.85 * content_score + 0.15 * source_priority
+```
+
+Die Quellenpriorität beeinflusst damit die Reihenfolge leicht, erzeugt aber keinen eigenen Rang und niemals automatisch einen Pin. OpenClaw oder der Benutzer können interessante Einträge explizit pinnen. Bereinigte n8n-Templates, die Watchlist-Migration und die Installationsschritte stehen unter [`n8n/`](n8n/README.md).
 
 ### Tastaturkürzel
 

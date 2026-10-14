@@ -2,11 +2,16 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { errorMessage, jsonError } from '@/lib/api';
+import { getArticleCleanupJob, startArticleCleanup } from '@/lib/articleCleanup';
 import { isAuthorized } from '@/lib/auth';
-import { deleteArticlesOlderThan } from '@/lib/nextcloud';
 
 interface CleanupBody {
   olderThanDays?: unknown;
+}
+
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  if (!isAuthorized(request)) return jsonError('Nicht autorisiert', 401);
+  return NextResponse.json(getArticleCleanupJob());
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -25,8 +30,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await deleteArticlesOlderThan(olderThanDays);
-    return NextResponse.json(result);
+    const job = startArticleCleanup(olderThanDays);
+    return NextResponse.json(job, { status: 202 });
   } catch (error) {
     return jsonError(errorMessage(error));
   }

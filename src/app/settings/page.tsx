@@ -31,12 +31,14 @@ const statusOptions: Array<{ value: ReaderStatus; label: string }> = [
   { value: 'irrelevant', label: 'Irrelevant' }
 ];
 
-interface CleanupResult {
+interface CleanupJobStatus {
+  state: 'idle' | 'running' | 'completed' | 'failed';
+  olderThanDays?: number;
   deleted: number;
-  deletedIds: string[];
   failed: number;
-  remaining: number;
+  remaining?: number;
   skippedWithoutPublished: number;
+  error?: string;
 }
 
 const shortcutRows: Array<{ keys: string; label: string }> = [
@@ -65,7 +67,44 @@ export default function SettingsPage(): React.ReactElement {
   useEffect(() => {
     setSyncLog(readSyncLog());
     void loadCachedSummaries().then(setSummaries);
+
+    void fetch('/api/articles/cleanup', { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await response.text());
+        return response.json() as Promise<CleanupJobStatus>;
+      })
+      .then((job) => {
+        setCleanupRunning(job.state === 'running');
+        if (job.state !== 'idle') setMessage(cleanupStatusMessage(job));
+      })
+      .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!cleanupRunning) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const response = await fetch('/api/articles/cleanup', { cache: 'no-store' });
+        if (!response.ok) throw new Error(await response.text());
+        const job = (await response.json()) as CleanupJobStatus;
+        if (cancelled) return;
+        setMessage(cleanupStatusMessage(job));
+        if (job.state !== 'running') setCleanupRunning(false);
+      } catch (error) {
+        if (cancelled) return;
+        const detail = error instanceof Error ? error.message : 'Unknown error';
+        setMessage(`Could not read cleanup status: ${detail}`);
+      }
+    };
+
+    const interval = window.setInterval(() => void poll(), 2_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [cleanupRunning]);
 
   const stats = useMemo(() => computeReadingStats(summaries), [summaries]);
 
@@ -103,40 +142,22 @@ export default function SettingsPage(): React.ReactElement {
     }
 
     setCleanupRunning(true);
-    let totalDeleted = 0;
-    let skippedWithoutPublished = 0;
+    setMessage('Starting article cleanup on the server…');
 
     try {
-      while (true) {
-        const response = await fetch('/api/articles/cleanup', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ olderThanDays })
-        });
-        if (!response.ok) throw new Error(await response.text());
+      const response = await fetch('/api/articles/cleanup', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ olderThanDays })
+      });
+      if (!response.ok) throw new Error(await response.text());
 
-        const result = (await response.json()) as CleanupResult;
-        totalDeleted += result.deleted;
-        skippedWithoutPublished = result.skippedWithoutPublished;
-        const deletedIds = new Set(result.deletedIds);
-        setSummaries((current) => current.filter((article) => !deletedIds.has(article.id)));
-
-        if (result.failed > 0) {
-          setMessage(`Deleted ${totalDeleted} old articles. ${result.failed} deletion(s) failed; cleanup stopped to protect Nextcloud.`);
-          return;
-        }
-        if (result.remaining === 0) {
-          setMessage(`Deleted ${totalDeleted} old articles. Kept ${skippedWithoutPublished} article(s) without a valid publication date.`);
-          return;
-        }
-
-        setMessage(`Deleted ${totalDeleted} old articles… ${result.remaining} remaining.`);
-        await new Promise((resolve) => setTimeout(resolve, 1_000));
-      }
+      const job = (await response.json()) as CleanupJobStatus;
+      setCleanupRunning(job.state === 'running');
+      setMessage(cleanupStatusMessage(job));
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Unknown error';
-      setMessage(`Cleanup failed after ${totalDeleted} deletion(s): ${detail}`);
-    } finally {
+      setMessage(`Could not start cleanup: ${detail}`);
       setCleanupRunning(false);
     }
   };
@@ -405,7 +426,7 @@ export default function SettingsPage(): React.ReactElement {
             onChange={(event) => setCleanupDays(event.target.value)}
           />
           <span className="text-xs text-mutedink">
-            Uses only the publication date. Papers and files without a valid publication date are never deleted.
+            Uses only the publication date. Papers and files without a valid publication date are never deleted. The cleanup continues on the server after you leave this page.
           </span>
         </label>
         <div>
@@ -455,6 +476,20 @@ export default function SettingsPage(): React.ReactElement {
       </section>
     </main>
   );
+}
+
+function cleanupStatusMessage(job: CleanupJobStatus): string {
+  if (job.state === 'running') {
+    const remaining = job.remaining === undefined ? '' : ` ${job.remaining} remaining.`;
+    return `Cleanup is running on the server. Deleted ${job.deleted} article(s).${remaining}`;
+  }
+  if (job.state === 'completed') {
+    return `Cleanup complete: deleted ${job.deleted} old article(s). Kept ${job.skippedWithoutPublished} article(s) without a valid publication date.`;
+  }
+  if (job.state === 'failed') {
+    return `Cleanup stopped after ${job.deleted} deletion(s): ${job.error ?? 'Unknown error'}`;
+  }
+  return 'No cleanup has been started.';
 }
 
 function ToggleRow({

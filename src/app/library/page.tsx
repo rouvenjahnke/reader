@@ -134,7 +134,7 @@ export default function LibraryPage(): React.ReactElement {
 function LibraryRow({ article }: { article: ArticleSummary }): React.ReactElement {
   const fm = article.frontmatter;
   const high = fm.reader_status === 'high_relevant';
-  const date = fm.reader_rated_at ?? fm.published ?? fm.fetched;
+  const date = fm.reader_rated_at ?? fm.published;
 
   return (
     <li>
@@ -179,7 +179,7 @@ function buildGroups(articles: ArticleSummary[], mode: GroupMode): Group[] {
       if (tags.length === 0) add('∅', 'untagged', article);
       for (const tag of tags) add(tag.toLowerCase(), tag, article);
     } else {
-      const iso = fm.reader_rated_at ?? fm.published ?? fm.fetched;
+      const iso = fm.reader_rated_at ?? fm.published;
       const parsed = iso ? new Date(iso) : null;
       if (parsed && !Number.isNaN(parsed.getTime())) {
         const key = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
@@ -201,8 +201,8 @@ function buildGroups(articles: ArticleSummary[], mode: GroupMode): Group[] {
 }
 
 function byRatedAtDesc(a: ArticleSummary, b: ArticleSummary): number {
-  const left = Date.parse(a.frontmatter.reader_rated_at ?? a.frontmatter.published ?? a.frontmatter.fetched ?? '') || 0;
-  const right = Date.parse(b.frontmatter.reader_rated_at ?? b.frontmatter.published ?? b.frontmatter.fetched ?? '') || 0;
+  const left = Date.parse(a.frontmatter.reader_rated_at ?? a.frontmatter.published ?? '') || 0;
+  const right = Date.parse(b.frontmatter.reader_rated_at ?? b.frontmatter.published ?? '') || 0;
   return right - left;
 }
 

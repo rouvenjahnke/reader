@@ -74,7 +74,8 @@ describe('buildPlainCitation', () => {
 
   it('formats web articles with source and url', () => {
     const citation = buildPlainCitation(webArticle);
-    expect(citation).toContain('Jane Doe (2026)');
+    expect(citation).toContain('Jane Doe');
+    expect(citation).not.toContain('(2026)');
     expect(citation).toContain('example');
     expect(citation).toContain('https://example.com/post');
   });

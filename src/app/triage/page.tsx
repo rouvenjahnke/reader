@@ -184,7 +184,7 @@ export default function TriagePage(): React.ReactElement {
           <h2 className="font-heading text-2xl font-bold leading-snug text-ink">{current.frontmatter.title}</h2>
 
           <p className="font-meta text-[11px] uppercase tracking-[0.08em] text-mutedink">
-            {[current.frontmatter.author, current.frontmatter.published ?? current.frontmatter.fetched]
+            {[current.frontmatter.author, current.frontmatter.published]
               .filter(Boolean)
               .join(' · ')}
           </p>

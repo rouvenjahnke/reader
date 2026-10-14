@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createClient, type FileStat, type WebDAVClient } from 'webdav';
 
+import { publishedTimestamp } from '@/lib/articleDate';
 import { parseArticle } from '@/lib/frontmatter';
 import { encodeArticleId } from '@/lib/ids';
 import type { Article, ArticleCollection, ArticleSummary } from '@/types/article';
@@ -49,6 +50,10 @@ interface CacheEntry {
 
 const summaryCache: Map<string, CacheEntry> = new Map();
 const CONCURRENCY = 6;
+const CLEANUP_BATCH_SIZE = 25;
+const DELETE_REQUEST_DELAY_MS = 200;
+const DELETE_MAX_RETRIES = 3;
+const DAY_MS = 86_400_000;
 
 function freshFromCache(file: FileStat): ArticleSummary | undefined {
   const entry = summaryCache.get(file.filename);
@@ -86,13 +91,16 @@ interface ListedFile {
   collection?: ArticleCollection;
 }
 
-export async function listArticleSummaries(): Promise<ArticleSummary[]> {
+export async function listArticleSummaries(options: { includePapers?: boolean } = {}): Promise<ArticleSummary[]> {
   const basePath = getBasePath();
-  const entries: ListedFile[] = (await listMarkdownFiles(basePath)).map((file) => ({ file, basePath }));
+  const includePapers = options.includePapers ?? true;
+  const entries: ListedFile[] = (await listMarkdownFiles(basePath))
+    .map((file) => ({ file, basePath }))
+    .filter(({ file }) => includePapers || articlePathMetadata(file.filename, basePath).collection !== 'papers');
 
   // The papers folder is optional and must never break the main listing.
   const papersPath = getPapersPath();
-  if (papersPath) {
+  if (papersPath && includePapers) {
     try {
       const papers = await listMarkdownFiles(papersPath);
       for (const file of papers) entries.push({ file, basePath: papersPath, collection: 'papers' });
@@ -101,9 +109,11 @@ export async function listArticleSummaries(): Promise<ArticleSummary[]> {
     }
   }
 
-  const present = new Set(entries.map((entry) => entry.file.filename));
-  for (const key of summaryCache.keys()) {
-    if (!present.has(key)) summaryCache.delete(key);
+  if (includePapers) {
+    const present = new Set(entries.map((entry) => entry.file.filename));
+    for (const key of summaryCache.keys()) {
+      if (!present.has(key)) summaryCache.delete(key);
+    }
   }
 
   const summaries = await mapWithConcurrency<ListedFile, ArticleSummary | null>(entries, CONCURRENCY, async ({ file, basePath, collection }) => {
@@ -233,9 +243,85 @@ export async function putArticleRaw(path: string, content: string): Promise<void
   invalidateArticleCache(path);
 }
 
+export interface DeleteOldArticlesResult {
+  deleted: number;
+  deletedIds: string[];
+  failed: number;
+  remaining: number;
+  skippedWithoutPublished: number;
+}
+
+/**
+ * Delete one small batch of Reader articles older than the given publication age.
+ * Papers and files without a valid `published` value are deliberately preserved.
+ */
+export async function deleteArticlesOlderThan(olderThanDays: number, now = new Date()): Promise<DeleteOldArticlesResult> {
+  if (!Number.isInteger(olderThanDays) || olderThanDays < 1 || olderThanDays > 36_500) {
+    throw new Error('Das Artikelalter muss eine ganze Zahl zwischen 1 und 36500 Tagen sein.');
+  }
+
+  const summaries = (await listArticleSummaries({ includePapers: false })).filter((article) => article.collection !== 'papers');
+  const cutoff = now.getTime() - olderThanDays * DAY_MS;
+  const withPublished = summaries
+    .map((article) => ({ article, publishedAt: publishedTimestamp(article) }))
+    .filter((entry): entry is { article: ArticleSummary; publishedAt: number } => entry.publishedAt !== undefined);
+  const candidates = withPublished
+    .filter((entry) => entry.publishedAt < cutoff)
+    .sort((left, right) => left.publishedAt - right.publishedAt);
+  const batch = candidates.slice(0, CLEANUP_BATCH_SIZE);
+  const deletedIds: string[] = [];
+  let failed = 0;
+
+  for (let index = 0; index < batch.length; index += 1) {
+    const { article } = batch[index];
+    try {
+      await deleteFileWithRetry(article.path);
+      invalidateArticleCache(article.path);
+      deletedIds.push(article.id);
+    } catch (error) {
+      failed += 1;
+      console.warn(`Could not delete old article ${article.path}: ${errorMessage(error)}`);
+    }
+
+    if (index < batch.length - 1) await wait(DELETE_REQUEST_DELAY_MS);
+  }
+
+  return {
+    deleted: deletedIds.length,
+    deletedIds,
+    failed,
+    remaining: Math.max(0, candidates.length - deletedIds.length),
+    skippedWithoutPublished: summaries.length - withPublished.length
+  };
+}
+
 export async function testConnection(basePath = getBasePath()): Promise<{ ok: true; count: number }> {
   const files = await listMarkdownFiles(basePath);
   return { ok: true, count: files.length };
+}
+
+async function deleteFileWithRetry(path: string): Promise<void> {
+  const c = getNextcloudClient();
+
+  for (let attempt = 0; attempt <= DELETE_MAX_RETRIES; attempt += 1) {
+    try {
+      await c.deleteFile(path);
+      return;
+    } catch (error) {
+      if (attempt === DELETE_MAX_RETRIES || !isRetryableDeleteError(error)) throw error;
+      await wait(1_000 * 2 ** attempt);
+    }
+  }
+}
+
+function isRetryableDeleteError(error: unknown): boolean {
+  if (!(error instanceof Error)) return true;
+  const status = 'status' in error && typeof error.status === 'number' ? error.status : undefined;
+  return status === undefined || status === 408 || status === 429 || status >= 500;
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function errorMessage(error: unknown): string {

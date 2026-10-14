@@ -5,7 +5,7 @@ import type { ArticleFrontmatter } from '@/types/article';
  * eprint fields; everything else falls back to a plain @misc with url.
  */
 export function buildBibtex(fm: ArticleFrontmatter): string {
-  const year = extractYear(fm.published ?? fm.fetched);
+  const year = extractYear(fm.published);
   const key = citationKey(fm, year);
   const lines: string[] = [];
 
@@ -35,7 +35,7 @@ export function buildBibtex(fm: ArticleFrontmatter): string {
 
 /** Plain-text one-line citation, e.g. for pasting into notes. */
 export function buildPlainCitation(fm: ArticleFrontmatter): string {
-  const year = extractYear(fm.published ?? fm.fetched);
+  const year = extractYear(fm.published);
   const parts: string[] = [];
   const authors = citationAuthors(fm);
   if (authors) parts.push(authors);

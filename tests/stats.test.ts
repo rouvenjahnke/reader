@@ -78,4 +78,23 @@ describe('computeReadingStats activity & streaks', () => {
     expect(stats.longestStreak).toBe(0);
     expect(stats.activity.every((entry) => entry.count === 0)).toBe(true);
   });
+
+  it('counts new articles by publication date rather than first-seen time', () => {
+    const stats = computeReadingStats([
+      {
+        id: 'published-today',
+        path: '/published-today.md',
+        firstSeenAt: '2026-06-01T09:00:00',
+        frontmatter: { title: 'Published today', published: '2026-06-11T09:00:00', fetched: '2026-06-01T09:00:00' }
+      },
+      {
+        id: 'fetched-today',
+        path: '/fetched-today.md',
+        firstSeenAt: '2026-06-11T09:00:00',
+        frontmatter: { title: 'Fetched today', published: '2026-05-01T09:00:00', fetched: '2026-06-11T09:00:00' }
+      }
+    ]);
+
+    expect(stats.newToday).toBe(1);
+  });
 });

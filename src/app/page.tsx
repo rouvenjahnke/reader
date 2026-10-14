@@ -8,6 +8,7 @@ import { FixedSizeList, type ListChildComponentProps } from 'react-window';
 
 import { ArticleListItem } from '@/components/ArticleListItem';
 import { FilterBar, type FilterBarMeta } from '@/components/FilterBar';
+import { publishedTimestamp } from '@/lib/articleDate';
 import { flushPendingQueues, getAllCachedBodies, pendingQueueDepth } from '@/lib/cache';
 import { applyContentMode, dedupeArticles, filterAndSortArticles } from '@/lib/filters';
 import { prefetchArticleBodies, type PrefetchProgress } from '@/lib/prefetch';
@@ -25,7 +26,6 @@ export default function HomePage(): React.ReactElement {
   const filters = useArticleStore((state) => state.filters);
   const contentMode = useArticleStore((state) => state.contentMode);
   const hydrated = useArticleStore((state) => state.hydrated);
-  const sessionNewIds = useArticleStore((state) => state.sessionNewIds);
   const setArticles = useArticleStore((state) => state.setArticles);
   const hydrateArticles = useArticleStore((state) => state.hydrateArticles);
   const noteSessionNew = useArticleStore((state) => state.noteSessionNew);
@@ -45,8 +45,6 @@ export default function HomePage(): React.ReactElement {
   const listHostRef = useRef<HTMLDivElement>(null);
   const prefetchRef = useRef<{ cancel: () => void } | null>(null);
   const lastRefreshRef = useRef<number>(0);
-
-  const sessionNewSet = useMemo(() => new Set(sessionNewIds), [sessionNewIds]);
 
   const visibleArticles = useMemo(() => applyContentMode(articles, contentMode), [articles, contentMode]);
 
@@ -212,9 +210,9 @@ export default function HomePage(): React.ReactElement {
     return () => window.clearInterval(interval);
   }, [lastSyncAt]);
 
-  const sessionNewCount = useMemo(
-    () => filtered.filter((article) => sessionNewSet.has(article.id)).length,
-    [filtered, sessionNewSet]
+  const publishedTodayCount = useMemo(
+    () => filtered.filter((article) => (publishedTimestamp(article) ?? 0) >= Date.now() - 86_400_000).length,
+    [filtered]
   );
 
   const meta: FilterBarMeta = {
@@ -223,7 +221,7 @@ export default function HomePage(): React.ReactElement {
     lastSyncAt,
     duplicateCount: dedup.duplicateCount,
     prefetch,
-    sessionNewCount,
+    publishedTodayCount,
     pendingCount,
     unratedCount,
     resultCount: filtered.length,
@@ -261,7 +259,7 @@ export default function HomePage(): React.ReactElement {
               width="100%"
               itemCount={filtered.length}
               itemSize={contentMode === 'papers' ? PAPER_ITEM_SIZE : ARTICLE_ITEM_SIZE}
-              itemData={{ articles: filtered, sessionNewIds: sessionNewSet }}
+              itemData={{ articles: filtered }}
             >
               {Row}
             </FixedSizeList>
@@ -274,10 +272,10 @@ export default function HomePage(): React.ReactElement {
 
 interface RowData {
   articles: ArticleSummary[];
-  sessionNewIds: Set<string>;
 }
 
 function Row({ index, style, data }: ListChildComponentProps<RowData>): React.ReactElement {
   const article = data.articles[index];
-  return <ArticleListItem article={article} style={style} isNew={data.sessionNewIds.has(article.id)} />;
+  const isNew = (publishedTimestamp(article) ?? 0) >= Date.now() - 86_400_000;
+  return <ArticleListItem article={article} style={style} isNew={isNew} />;
 }

@@ -31,7 +31,7 @@ export interface FilterBarMeta {
   lastSyncAt?: string;
   duplicateCount: number;
   prefetch?: { done: number; total: number };
-  sessionNewCount: number;
+  publishedTodayCount: number;
   pendingCount: number;
   unratedCount: number;
   resultCount: number;
@@ -229,7 +229,7 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
               onClick={() => setSortMode('newest')}
               aria-pressed={filters.sortMode === 'newest'}
             >
-              Added
+              Published
             </button>
             <button
               type="button"
@@ -298,9 +298,9 @@ export function FilterBar({ articles, onRefresh, meta }: Props): React.ReactElem
             variant={filters.newTodayOnly ? 'default' : 'secondary'}
             onClick={toggleNewTodayOnly}
             aria-pressed={filters.newTodayOnly}
-            title="Only articles first observed in the last 24 hours"
+            title="Only articles published in the last 24 hours"
           >
-            <Sparkles className="h-3.5 w-3.5" /> Today{meta.sessionNewCount > 0 ? ` · ${meta.sessionNewCount}` : ''}
+            <Sparkles className="h-3.5 w-3.5" /> Today{meta.publishedTodayCount > 0 ? ` · ${meta.publishedTodayCount}` : ''}
           </Button>
           {contentMode === 'articles' && hasGalois ? (
             <Button

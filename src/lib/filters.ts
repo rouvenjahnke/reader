@@ -1,5 +1,6 @@
 import Fuse from 'fuse.js';
 
+import { publishedTimestamp } from '@/lib/articleDate';
 import type { ArticleFilters, ArticleSummary, ContentMode, PapersVisibility, ReaderStatus } from '@/types/article';
 
 const defaultStatuses: ReaderStatus[] = ['unrated'];
@@ -92,9 +93,6 @@ export function filterAndSortArticles(articles: ArticleSummary[], filters: Artic
       if (scoreDelta !== 0) return scoreDelta;
     }
 
-    const addedDelta = addedDateValue(b) - addedDateValue(a);
-    if (addedDelta !== 0) return addedDelta;
-
     return publishedDateValue(b) - publishedDateValue(a);
   });
 }
@@ -183,24 +181,12 @@ function normalizeSourceName(value: unknown): string {
 }
 
 function isNewSince(article: ArticleSummary, cutoffMs: number): boolean {
-  const ts = article.firstSeenAt ? Date.parse(article.firstSeenAt) : NaN;
-  if (Number.isFinite(ts)) return ts >= cutoffMs;
-  const fallback = dateValue(article.frontmatter.fetched ?? article.frontmatter.published ?? article.lastModified);
-  return fallback > 0 && fallback >= cutoffMs;
-}
-
-function dateValue(value: string | undefined): number {
-  if (!value) return 0;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function addedDateValue(article: ArticleSummary): number {
-  return dateValue(article.firstSeenAt ?? article.frontmatter.fetched ?? article.lastModified ?? article.frontmatter.published);
+  const timestamp = publishedTimestamp(article);
+  return timestamp !== undefined && timestamp >= cutoffMs;
 }
 
 function publishedDateValue(article: ArticleSummary): number {
-  return dateValue(article.frontmatter.published ?? article.frontmatter.fetched ?? article.lastModified);
+  return publishedTimestamp(article) ?? 0;
 }
 
 // ─── Deduplication ────────────────────────────────────────────────────────────

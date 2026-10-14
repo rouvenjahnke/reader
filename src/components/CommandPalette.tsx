@@ -50,7 +50,7 @@ export function CommandPalette(): React.ReactElement | null {
       { id: 'go-library', label: 'Go to article library', hint: 'b', icon: <LibraryBig className="h-4 w-4" />, run: () => { setContentMode('articles'); router.push('/library'); } },
       { id: 'go-settings', label: 'Go to settings', icon: <Settings className="h-4 w-4" />, run: () => router.push('/settings') },
       { id: 'sync', label: 'Sync now', icon: <RefreshCw className="h-4 w-4" />, run: () => window.dispatchEvent(new CustomEvent('reader:sync')) },
-      { id: 'sort-newest', label: 'Sort by added date', icon: <ArrowUpDown className="h-4 w-4" />, run: () => setSortMode('newest') },
+      { id: 'sort-newest', label: 'Sort by publication date', icon: <ArrowUpDown className="h-4 w-4" />, run: () => setSortMode('newest') },
       { id: 'sort-score', label: 'Sort by score', icon: <ArrowUpDown className="h-4 w-4" />, run: () => setSortMode('score') },
       { id: 'toggle-today', label: 'Toggle filter: new today', icon: <Sparkles className="h-4 w-4" />, run: toggleNewTodayOnly },
       { id: 'toggle-galois', label: 'Toggle filter: Galois only', icon: <Sparkles className="h-4 w-4" />, run: () => { setContentMode('articles'); toggleGaloisOnly(); } },

@@ -95,7 +95,7 @@ export interface ArticleFilters {
   query: string;
   /** Show only Galois-source articles. */
   galoisOnly: boolean;
-  /** Show only articles first observed within the last 24 hours. */
+  /** Show only articles published within the last 24 hours. */
   newTodayOnly: boolean;
   /** When false, articles collapsed as duplicates are hidden from the list. */
   showDuplicates: boolean;

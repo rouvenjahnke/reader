@@ -1,4 +1,5 @@
 import type { ArticleSummary, ReaderStatus } from '@/types/article';
+import { publishedTimestamp } from '@/lib/articleDate';
 
 export interface ActivityDay {
   /** Local date key, YYYY-MM-DD. */
@@ -63,8 +64,8 @@ export function computeReadingStats(articles: ArticleSummary[]): ReadingStats {
       sources.set(sourceName, (sources.get(sourceName) ?? 0) + 1);
     }
 
-    const firstSeen = article.firstSeenAt ? Date.parse(article.firstSeenAt) : NaN;
-    if (Number.isFinite(firstSeen) && firstSeen >= now - DAY_MS) newToday += 1;
+    const publishedAt = publishedTimestamp(article);
+    if (publishedAt !== undefined && publishedAt >= now - DAY_MS) newToday += 1;
   }
 
   const bySource = Array.from(sources.entries())

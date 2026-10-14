@@ -22,8 +22,8 @@ export function ArticleListItem({ article, isNew, style }: Props): React.ReactEl
 
   const authors = fm.authors?.length ? fm.authors.join(', ') : fm.author;
   const metaLine = isPaper
-    ? [authors, fm.arxiv_id ? `arXiv:${fm.arxiv_id}` : fm.doi ? `DOI:${fm.doi}` : fm.source, relativeDate(article.firstSeenAt ?? fm.fetched ?? article.lastModified ?? fm.published)].filter(Boolean).join(' · ')
-    : [fm.source, fm.author, relativeDate(article.firstSeenAt ?? fm.fetched ?? article.lastModified ?? fm.published)].filter(Boolean).join(' · ');
+    ? [authors, fm.arxiv_id ? `arXiv:${fm.arxiv_id}` : fm.doi ? `DOI:${fm.doi}` : fm.source, relativeDate(fm.published)].filter(Boolean).join(' · ')
+    : [fm.source, fm.author, relativeDate(fm.published)].filter(Boolean).join(' · ');
 
   return (
     <div style={style} className="px-4">

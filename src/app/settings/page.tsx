@@ -21,7 +21,7 @@ const designOptions: Array<{ value: DesignTheme; label: string; description: str
   { value: 'legibility', label: 'Legibility', description: 'Reading-optimised: neutral paper, AAA contrast, larger and looser prose.' }
 ];
 const sortModes: Array<{ value: ArticleSortMode; label: string }> = [
-  { value: 'newest', label: 'Added' },
+  { value: 'newest', label: 'Published' },
   { value: 'score', label: 'Score' }
 ];
 const statusOptions: Array<{ value: ReaderStatus; label: string }> = [
@@ -30,6 +30,14 @@ const statusOptions: Array<{ value: ReaderStatus; label: string }> = [
   { value: 'high_relevant', label: 'High' },
   { value: 'irrelevant', label: 'Irrelevant' }
 ];
+
+interface CleanupResult {
+  deleted: number;
+  deletedIds: string[];
+  failed: number;
+  remaining: number;
+  skippedWithoutPublished: number;
+}
 
 const shortcutRows: Array<{ keys: string; label: string }> = [
   { keys: 'Ctrl K', label: 'Command palette' },
@@ -51,6 +59,8 @@ export default function SettingsPage(): React.ReactElement {
   const [message, setMessage] = useState('');
   const [syncLog, setSyncLog] = useState<SyncLogEntry[]>([]);
   const [summaries, setSummaries] = useState<ArticleSummary[]>([]);
+  const [cleanupDays, setCleanupDays] = useState('90');
+  const [cleanupRunning, setCleanupRunning] = useState(false);
 
   useEffect(() => {
     setSyncLog(readSyncLog());
@@ -80,6 +90,55 @@ export default function SettingsPage(): React.ReactElement {
   const clearLogs = () => {
     clearSyncLog();
     setSyncLog([]);
+  };
+
+  const cleanupOldArticles = async () => {
+    const olderThanDays = Number(cleanupDays);
+    if (!Number.isInteger(olderThanDays) || olderThanDays < 1 || olderThanDays > 36_500) {
+      setMessage('Enter a whole number between 1 and 36500 days.');
+      return;
+    }
+    if (!window.confirm(`Permanently delete Reader articles published more than ${olderThanDays} days ago from Nextcloud? Papers and articles without a valid publication date will be kept.`)) {
+      return;
+    }
+
+    setCleanupRunning(true);
+    let totalDeleted = 0;
+    let skippedWithoutPublished = 0;
+
+    try {
+      while (true) {
+        const response = await fetch('/api/articles/cleanup', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ olderThanDays })
+        });
+        if (!response.ok) throw new Error(await response.text());
+
+        const result = (await response.json()) as CleanupResult;
+        totalDeleted += result.deleted;
+        skippedWithoutPublished = result.skippedWithoutPublished;
+        const deletedIds = new Set(result.deletedIds);
+        setSummaries((current) => current.filter((article) => !deletedIds.has(article.id)));
+
+        if (result.failed > 0) {
+          setMessage(`Deleted ${totalDeleted} old articles. ${result.failed} deletion(s) failed; cleanup stopped to protect Nextcloud.`);
+          return;
+        }
+        if (result.remaining === 0) {
+          setMessage(`Deleted ${totalDeleted} old articles. Kept ${skippedWithoutPublished} article(s) without a valid publication date.`);
+          return;
+        }
+
+        setMessage(`Deleted ${totalDeleted} old articles… ${result.remaining} remaining.`);
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Unknown error';
+      setMessage(`Cleanup failed after ${totalDeleted} deletion(s): ${detail}`);
+    } finally {
+      setCleanupRunning(false);
+    }
   };
 
   const toggleDefaultStatus = (status: ReaderStatus) => {
@@ -329,6 +388,30 @@ export default function SettingsPage(): React.ReactElement {
             Test Nextcloud connection
           </Button>
           {message ? <p className="text-sm text-mutedink">{message}</p> : null}
+        </div>
+      </section>
+
+      <section className="grid gap-3">
+        <h2 className="theorem-label text-mutedink">Article cleanup</h2>
+        <label className="grid gap-2 text-sm font-medium">
+          Delete articles older than (days)
+          <Input
+            type="number"
+            min={1}
+            max={36_500}
+            step={1}
+            value={cleanupDays}
+            disabled={cleanupRunning}
+            onChange={(event) => setCleanupDays(event.target.value)}
+          />
+          <span className="text-xs text-mutedink">
+            Uses only the publication date. Papers and files without a valid publication date are never deleted.
+          </span>
+        </label>
+        <div>
+          <Button type="button" variant="destructive" disabled={cleanupRunning} onClick={() => void cleanupOldArticles()}>
+            <Trash2 className="h-4 w-4" /> {cleanupRunning ? 'Deleting safely…' : 'Delete old articles'}
+          </Button>
         </div>
       </section>
 

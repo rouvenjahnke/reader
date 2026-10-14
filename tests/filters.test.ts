@@ -89,7 +89,7 @@ describe('filters', () => {
     expect(filterAndSortArticles(articles, { ...baseFilters, sortMode: 'score', statuses: ['unrated', 'relevant'] }).map((article) => article.id)).toEqual(['c', 'b', 'a']);
   });
 
-  it('sorts added-date mode by reader-added/fetched time before publication time', () => {
+  it('sorts newest mode by publication time and ignores fetched time', () => {
     const input: ArticleSummary[] = [
       {
         id: 'old-published-new-fetch',
@@ -113,7 +113,20 @@ describe('filters', () => {
       }
     ];
 
-    expect(filterAndSortArticles(input, baseFilters).map((article) => article.id)).toEqual(['old-published-new-fetch', 'new-published-old-fetch']);
+    expect(filterAndSortArticles(input, baseFilters).map((article) => article.id)).toEqual(['new-published-old-fetch', 'old-published-new-fetch']);
+  });
+
+  it('filters today by publication time and never by fetched time', () => {
+    const now = Date.now();
+    const recent = new Date(now - 60 * 60 * 1000).toISOString();
+    const old = new Date(now - 3 * 86_400_000).toISOString();
+    const input: ArticleSummary[] = [
+      { id: 'recent-publication', path: '/recent.md', frontmatter: { title: 'Recent', published: recent, fetched: old, reader_status: 'unrated' } },
+      { id: 'recent-fetch', path: '/old.md', frontmatter: { title: 'Old', published: old, fetched: recent, reader_status: 'unrated' } },
+      { id: 'missing-publication', path: '/missing.md', frontmatter: { title: 'Missing', fetched: recent, reader_status: 'unrated' } }
+    ];
+
+    expect(filterAndSortArticles(input, { ...baseFilters, newTodayOnly: true }).map((article) => article.id)).toEqual(['recent-publication']);
   });
 
   it('filters with fuzzy search', () => {
@@ -191,7 +204,7 @@ describe('filters', () => {
     ).toEqual(['b', 'a', 'c']);
   });
 
-  it('pins priority articles by default even when sorted by added date', () => {
+  it('pins priority articles by default even when sorted by publication date', () => {
     expect(
       filterAndSortArticles(articles, { ...baseFilters, statuses: ['unrated', 'relevant'] }).map((article) => article.id)
     ).toEqual(['c', 'b', 'a']);
